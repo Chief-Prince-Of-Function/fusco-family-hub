@@ -22,6 +22,8 @@ const CALENDAR_FEED_URL = "https://p118-caldav.icloud.com/published/2/MTAwOTc2Mz
 const CALENDAR_FETCH_STRATEGIES = [
   { label: "allorigins", build: (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}` },
   { label: "corsproxy", build: (url) => `https://corsproxy.io/?${encodeURIComponent(url)}` },
+  { label: "thingproxy", build: (url) => `https://thingproxy.freeboard.io/fetch/${url}` },
+  { label: "jina-ai", build: (url) => `https://r.jina.ai/http://${url.replace(/^https?:\/\//, "")}` },
   { label: "cors-isomorphic", build: (url) => `https://cors.isomorphic-git.org/${url}` },
   { label: "direct", build: (url) => url }
 ];
@@ -314,12 +316,22 @@ function renderCalendar(events){
 }
 
 function buildCalendarUrlVariants(feedUrl){
-  const variants = [feedUrl];
+  const normalized = feedUrl.replace(/^webcal:\/\//i, "https://");
+  const variants = [normalized];
+  if(normalized !== feedUrl){
+    variants.push(feedUrl);
+  }
   if(!feedUrl.endsWith(".ics")){
     variants.push(`${feedUrl}.ics`);
   }
+  if(!normalized.endsWith(".ics")){
+    variants.push(`${normalized}.ics`);
+  }
   if(!feedUrl.includes("?")){
     variants.push(`${feedUrl}?format=ics`);
+  }
+  if(!normalized.includes("?")){
+    variants.push(`${normalized}?format=ics`);
   }
   return Array.from(new Set(variants));
 }
