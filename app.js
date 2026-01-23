@@ -2,7 +2,6 @@ const statusEl = document.getElementById("status");
 const footerMeta = document.getElementById("footerMeta");
 
 const todayBlock = document.getElementById("todayBlock");
-const linksBlock = document.getElementById("linksBlock");
 const notesInput = document.getElementById("notesInput");
 const notesMeta = document.getElementById("notesMeta");
 
@@ -15,10 +14,15 @@ const calendarUrl = document.getElementById("calendarUrl");
 const calendarMeta = document.getElementById("calendarMeta");
 
 const refreshBtn = document.getElementById("refreshBtn");
+const saveBtn = document.getElementById("saveBtn");
 
 const NOTES_KEY = "familyHubNotes";
 const TODOS_KEY = "familyHubTodos";
 const CALENDAR_KEY = "familyHubCalendar";
+const GITHUB_TOKEN_KEY = "FFH_GITHUB_TOKEN";
+
+let hubData = null;
+let isSaving = false;
 
 function setStatus(msg){
   if(statusEl) statusEl.textContent = msg;
@@ -56,27 +60,6 @@ function renderToday(data){
   todayBlock.innerHTML = `
     <div style="font-weight:800; margin-bottom:10px;">${esc(headline)}</div>
     ${focusHtml}
-  `;
-}
-
-function renderLinks(data){
-  const links = Array.isArray(data?.links) ? data.links : [];
-  if(!links.length){
-    linksBlock.innerHTML = `<div class="muted">No links yet.</div>`;
-    return;
-  }
-
-  linksBlock.innerHTML = `
-    <div class="list">
-      ${links.map(l => `
-        <div class="row">
-          <div style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-            <a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label || l.url)}</a>
-          </div>
-          <div class="muted" style="font-size:12px;">${esc(l.tag || "")}</div>
-        </div>
-      `).join("")}
-    </div>
   `;
 }
 
@@ -232,13 +215,104 @@ function renderMeta(data){
   footerMeta.textContent = `data: ${updated || "—"} ${device ? `· ${device}` : ""}`;
 }
 
+function getRepoInfo(){
+  const { hostname, pathname } = window.location;
+  if(!hostname.endsWith("github.io")) return null;
+  const owner = hostname.split(".")[0];
+  const pathParts = pathname.split("/").filter(Boolean);
+  const repo = pathParts[0];
+  if(!owner || !repo) return null;
+  return { owner, repo };
+}
+
+function getGithubToken(){
+  const existing = localStorage.getItem(GITHUB_TOKEN_KEY);
+  if(existing) return existing;
+  const entered = window.prompt("Enter your GitHub token to save to cloud:");
+  if(!entered) throw new Error("GitHub token is required.");
+  const token = entered.trim();
+  if(!token) throw new Error("GitHub token is required.");
+  localStorage.setItem(GITHUB_TOKEN_KEY, token);
+  return token;
+}
+
+function buildPayload(){
+  const notes = notesInput?.value ?? "";
+  const calendarValue = calendarUrl?.value?.trim() ?? "";
+  const payload = {
+    meta: {
+      updatedAt: new Date().toISOString(),
+      source: "web"
+    },
+    today: hubData?.today ?? {},
+    notes,
+    todos,
+    calendar: calendarValue ? { url: calendarValue } : {}
+  };
+
+  if(Array.isArray(hubData?.links)){
+    payload.links = hubData.links;
+  }
+
+  return payload;
+}
+
+async function saveToCloud(){
+  if(isSaving) return;
+  try{
+    isSaving = true;
+    if(saveBtn) saveBtn.disabled = true;
+    setStatus("Saving…");
+    const token = getGithubToken();
+    const repoInfo = getRepoInfo();
+    if(!repoInfo) throw new Error("Could not infer GitHub repo from this URL.");
+    const payload = buildPayload();
+    const response = await fetch(
+      `https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}/actions/workflows/save-hub-json.yml/dispatches`,
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${token}`,
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        body: JSON.stringify({
+          ref: "main",
+          inputs: {
+            payload: JSON.stringify(payload)
+          }
+        })
+      }
+    );
+
+    if(!response.ok){
+      let message = `GitHub API error (${response.status})`;
+      try{
+        const data = await response.json();
+        if(data?.message) message = data.message;
+      }catch{
+        // ignore json parse errors
+      }
+      throw new Error(message);
+    }
+
+    setStatus("Saved");
+  }catch(err){
+    console.error(err);
+    setStatus(`Error: ${err.message || "Save failed."}`);
+  }finally{
+    isSaving = false;
+    if(saveBtn) saveBtn.disabled = false;
+  }
+}
+
 async function refresh(){
   try{
     setStatus("Loading cloud data…");
     const data = await loadHubJSON();
+    hubData = data;
 
     renderToday(data);
-    renderLinks(data);
     renderMeta(data);
 
     setStatus("Loaded from ./data/hub.json");
@@ -246,12 +320,12 @@ async function refresh(){
     console.error(err);
     setStatus("Could not load hub.json (check GitHub Pages + path).");
     todayBlock.innerHTML = `<div class="muted">Error loading data.</div>`;
-    linksBlock.innerHTML = `<div class="muted">Error loading data.</div>`;
     footerMeta.textContent = "data: —";
   }
 }
 
 refreshBtn?.addEventListener("click", refresh);
+saveBtn?.addEventListener("click", saveToCloud);
 
 notesInput?.addEventListener("input", saveNotes);
 todoForm?.addEventListener("submit", (event) => {
