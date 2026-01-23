@@ -1,6 +1,6 @@
 {
   "meta": {
-    "updatedAt": "2026-01-23T03:08:54.740Z",
+    "updatedAt": "2026-01-23T13:06:14.000Z",
     "source": "web"
   },
   "today": {
@@ -22,7 +22,9 @@
       "text": "Replace the front door handle."
     }
   ],
-  "calendar": {},
+  "calendar": {
+    "url": "https://p118-caldav.icloud.com/published/2/MTAwOTc2MzMxMzEwMDk3NkfBTEalW_8j08aH5ptAb17hc-m1j1maxyi1OQ-k6lyqZrcyzkVqsiLDgydJKgbIX1GMSAVGljZh20EcuHB_law"
+  },
   "links": [
     {
       "label": "Google",

@@ -20,9 +20,10 @@ const NOTES_KEY = "familyHubNotes";
 const TODOS_KEY = "familyHubTodos";
 const CALENDAR_FEED_URL = "https://p118-caldav.icloud.com/published/2/MTAwOTc2MzMxMzEwMDk3NkfBTEalW_8j08aH5ptAb17hc-m1j1maxyi1OQ-k6lyqZrcyzkVqsiLDgydJKgbIX1GMSAVGljZh20EcuHB_law";
 const CALENDAR_FETCH_STRATEGIES = [
-  { label: "direct", build: (url) => url },
   { label: "allorigins", build: (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}` },
-  { label: "cors-isomorphic", build: (url) => `https://cors.isomorphic-git.org/${url}` }
+  { label: "corsproxy", build: (url) => `https://corsproxy.io/?${encodeURIComponent(url)}` },
+  { label: "cors-isomorphic", build: (url) => `https://cors.isomorphic-git.org/${url}` },
+  { label: "direct", build: (url) => url }
 ];
 const GITHUB_TOKEN_KEY = "FFH_GITHUB_TOKEN";
 
@@ -312,6 +313,17 @@ function renderCalendar(events){
   setCalendarStatus("");
 }
 
+function buildCalendarUrlVariants(feedUrl){
+  const variants = [feedUrl];
+  if(!feedUrl.endsWith(".ics")){
+    variants.push(`${feedUrl}.ics`);
+  }
+  if(!feedUrl.includes("?")){
+    variants.push(`${feedUrl}?format=ics`);
+  }
+  return Array.from(new Set(variants));
+}
+
 async function loadCalendarEvents(){
   if(!calendarList) return;
   try{
@@ -323,21 +335,25 @@ async function loadCalendarEvents(){
     setCalendarStatus("Loading calendar…");
     let icsText = "";
     const errors = [];
-    for(const strategy of CALENDAR_FETCH_STRATEGIES){
-      try{
-        const response = await fetch(strategy.build(feedUrl), { cache: "no-store" });
-        if(!response.ok) throw new Error(`${strategy.label} fetch failed (${response.status})`);
-        icsText = await response.text();
-        if(icsText){
-          if(strategy.label !== "direct"){
-            console.info(`Calendar loaded via ${strategy.label} proxy.`);
+    const feedVariants = buildCalendarUrlVariants(feedUrl);
+    for(const variant of feedVariants){
+      for(const strategy of CALENDAR_FETCH_STRATEGIES){
+        try{
+          const response = await fetch(strategy.build(variant), { cache: "no-store" });
+          if(!response.ok) throw new Error(`${strategy.label} fetch failed (${response.status})`);
+          icsText = await response.text();
+          if(icsText){
+            if(strategy.label !== "direct"){
+              console.info(`Calendar loaded via ${strategy.label} proxy.`);
+            }
+            break;
           }
-          break;
+          errors.push(`${strategy.label} returned empty response`);
+        }catch(err){
+          errors.push(err.message || `${strategy.label} fetch failed`);
         }
-        errors.push(`${strategy.label} returned empty response`);
-      }catch(err){
-        errors.push(err.message || `${strategy.label} fetch failed`);
       }
+      if(icsText) break;
     }
     if(!icsText){
       throw new Error(`Calendar fetch failed. ${errors.join(" | ")}`);
