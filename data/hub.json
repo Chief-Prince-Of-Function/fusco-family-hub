@@ -1,7 +1,7 @@
 {
   "meta": {
-    "updatedAt": "2026-01-22T00:00:00-05:00",
-    "source": "seed"
+    "updatedAt": "2026-01-23T03:04:20.467Z",
+    "source": "web"
   },
   "today": {
     "headline": "Welcome to Fusco Family Hub",
@@ -11,8 +11,14 @@
       "Ship v1"
     ]
   },
+  "notes": "What if we do this.",
+  "todos": [],
+  "calendar": {},
   "links": [
-    { "label": "Google", "url": "https://google.com", "tag": "default" }
-  ],
-  "notes": "This JSON is your cross-device source of truth.\n\nNext: we’ll add cloud SAVE."
+    {
+      "label": "Google",
+      "url": "https://google.com",
+      "tag": "default"
+    }
+  ]
 }
