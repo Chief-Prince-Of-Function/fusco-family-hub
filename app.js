@@ -21,9 +21,8 @@ const TODOS_KEY = "familyHubTodos";
 const CALENDAR_FEED_URL = "webcal://p118-caldav.icloud.com/published/2/MTAwOTc2MzMxMzEwMDk3NkfBTEalW_8j08aH5ptAb17hc-m1j1maxyi1OQ-k6lyqZrcyzkVqsiLDgydJKgbIX1GMSAVGljZh20EcuHB_law";
 const CALENDAR_FETCH_STRATEGIES = [
   { label: "allorigins", build: (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}` },
-  { label: "corsproxy", build: (url) => `https://corsproxy.io/?${encodeURIComponent(url)}` },
-  { label: "thingproxy", build: (url) => `https://thingproxy.freeboard.io/fetch/${url}` },
-  { label: "jina-ai", build: (url) => `https://r.jina.ai/http://${url.replace(/^https?:\/\//, "")}` },
+  { label: "jina-ai-https", build: (url) => `https://r.jina.ai/https://${url.replace(/^https?:\/\//, "")}` },
+  { label: "jina-ai-http", build: (url) => `https://r.jina.ai/http://${url.replace(/^https?:\/\//, "")}` },
   { label: "cors-isomorphic", build: (url) => `https://cors.isomorphic-git.org/${url}` },
   { label: "direct", build: (url) => url }
 ];
