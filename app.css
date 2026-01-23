@@ -91,9 +91,7 @@ body{
 }
 
 @media (min-width: 900px){
-  .card:nth-child(1){ grid-column: span 5; }
-  .card:nth-child(2){ grid-column: span 7; }
-  .card:nth-child(3){ grid-column: span 12; }
+  .card{ grid-column: span 6; }
 }
 
 .cardTitle{
@@ -125,6 +123,98 @@ a{
   text-decoration: none;
 }
 a:hover{ text-decoration: underline; }
+
+.inputLabel{
+  display:block;
+  font-size: 12px;
+  letter-spacing: .2px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.textInput{
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,.08);
+  color: var(--ink);
+  font: inherit;
+}
+.textInput:focus{
+  outline: 2px solid rgba(130,170,255,.45);
+  border-color: transparent;
+}
+
+.notesCard{
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+}
+.notesInput{ resize: vertical; min-height: 160px; }
+.notesMeta{ font-size: 12px; }
+
+.todoForm{
+  display:flex;
+  flex-direction:column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.todoInputRow{
+  display:flex;
+  gap: 10px;
+  align-items:center;
+}
+.todoInputRow .textInput{ flex: 1; }
+
+.todoList{
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+  margin-top: 12px;
+}
+.todoItem{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,.06);
+}
+.todoItem.dragging{ opacity: .6; }
+.todoItem.over{ border-color: rgba(130,170,255,.6); }
+.todoDrag{
+  font-size: 16px;
+  cursor: grab;
+  color: var(--muted);
+}
+.todoText{
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  padding: 4px 0;
+}
+.todoText:focus{
+  outline: none;
+  border-bottom: 1px solid rgba(130,170,255,.6);
+}
+.todoActions{
+  display:flex;
+  gap: 8px;
+}
+.btn.small{
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.calendarMeta{
+  margin-top: 8px;
+  font-size: 12px;
+}
 
 .footer{
   padding: 10px 16px 18px;
