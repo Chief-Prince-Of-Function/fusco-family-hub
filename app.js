@@ -5,6 +5,14 @@ const todayBlock = document.getElementById("todayBlock");
 const notesInput = document.getElementById("notesInput");
 const notesMeta = document.getElementById("notesMeta");
 
+const statusDate = document.getElementById("statusDate");
+const tasksChip = document.getElementById("tasksChip");
+const eventsChip = document.getElementById("eventsChip");
+const nextChip = document.getElementById("nextChip");
+const weatherValue = document.getElementById("weatherValue");
+const weatherForm = document.getElementById("weatherForm");
+const weatherZip = document.getElementById("weatherZip");
+
 const todoForm = document.getElementById("todoForm");
 const todoInput = document.getElementById("todoInput");
 const todoList = document.getElementById("todoList");
@@ -18,6 +26,7 @@ const saveBtn = document.getElementById("saveBtn");
 
 const NOTES_KEY = "familyHubNotes";
 const TODOS_KEY = "familyHubTodos";
+const WEATHER_ZIP_KEY = "familyHubWeatherZip";
 const CALENDAR_FEED_URL = "https://p118-caldav.icloud.com/published/2/MTAwOTc2MzMxMzEwMDk3NkfBTEalW_8j08aH5ptAb17hc-m1j1maxyi1OQ-k6lyqZrcyzkVqsiLDgydJKgbIX1GMSAVGljZh20EcuHB_law";
 const CALENDAR_FETCH_STRATEGIES = [
   { label: "allorigins", build: (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}` },
@@ -32,6 +41,7 @@ const CALENDAR_CACHE_TTL_MS = 1000 * 60 * 60 * 6;
 
 let hubData = null;
 let isSaving = false;
+let calendarEvents = [];
 
 function setStatus(msg){
   if(statusEl) statusEl.textContent = msg;
@@ -44,6 +54,106 @@ function esc(s){
     .replaceAll(">","&gt;")
     .replaceAll('"',"&quot;")
     .replaceAll("'","&#039;");
+}
+
+function pluralize(count, singular, plural = `${singular}s`){
+  return count === 1 ? singular : plural;
+}
+
+function updateStatusDate(){
+  if(!statusDate) return;
+  const now = new Date();
+  const weekday = new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(now);
+  const monthDay = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(now);
+  statusDate.textContent = `Today is ${weekday} • ${monthDay}`;
+}
+
+function updateTaskChip(){
+  if(!tasksChip) return;
+  const count = todos.length;
+  tasksChip.textContent = `✅ ${count} ${pluralize(count, "task")} left`;
+}
+
+function isSameDay(dateA, dateB){
+  return dateA.getFullYear() === dateB.getFullYear()
+    && dateA.getMonth() === dateB.getMonth()
+    && dateA.getDate() === dateB.getDate();
+}
+
+function buildNextEventLabel(event){
+  const summary = event.summary || "Untitled event";
+  if(event.allDay){
+    return `${summary} (All day)`;
+  }
+  const timeFormatter = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+  const timeLabel = timeFormatter.format(event.start);
+  return `${summary} @ ${timeLabel}`;
+}
+
+function updateCalendarChips(events){
+  if(!eventsChip && !nextChip) return;
+  const now = new Date();
+  const todayEvents = events.filter(event => event.start instanceof Date && isSameDay(event.start, now));
+  if(eventsChip){
+    const count = todayEvents.length;
+    eventsChip.textContent = `📅 ${count} ${pluralize(count, "event")} today`;
+  }
+  if(nextChip){
+    const sorted = [...events].filter(event => event.start instanceof Date).sort((a, b) => a.start - b.start);
+    const next = sorted.find(event => {
+      if(event.allDay){
+        return isSameDay(event.start, now) || event.start > now;
+      }
+      return event.start >= now;
+    });
+    nextChip.textContent = next ? `⏱ Next up: ${buildNextEventLabel(next)}` : "⏱ Next up: —";
+  }
+}
+
+function weatherCodeToIcon(code){
+  if(code === 0) return "☀️";
+  if([1, 2].includes(code)) return "🌤";
+  if(code === 3) return "☁️";
+  if([45, 48].includes(code)) return "🌫";
+  if([51, 53, 55, 56, 57].includes(code)) return "🌦";
+  if([61, 63, 65, 66, 67].includes(code)) return "🌧";
+  if([71, 73, 75, 77].includes(code)) return "❄️";
+  if([80, 81, 82].includes(code)) return "🌧";
+  if([85, 86].includes(code)) return "❄️";
+  if([95, 96, 99].includes(code)) return "⛈";
+  return "🌡️";
+}
+
+function setWeatherStatus(text){
+  if(weatherValue) weatherValue.textContent = text;
+}
+
+async function fetchWeatherForZip(zip){
+  if(!zip) return;
+  setWeatherStatus("⏳ Loading…");
+  try{
+    const geoRes = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(zip)}&count=1&language=en&format=json`
+    );
+    if(!geoRes.ok) throw new Error("Geocode failed");
+    const geoData = await geoRes.json();
+    const place = geoData?.results?.[0];
+    if(!place) throw new Error("Location not found");
+    const { latitude, longitude } = place;
+    const weatherRes = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&temperature_unit=fahrenheit`
+    );
+    if(!weatherRes.ok) throw new Error("Weather fetch failed");
+    const weatherData = await weatherRes.json();
+    const temp = Number(weatherData?.current?.temperature_2m);
+    const code = Number(weatherData?.current?.weather_code);
+    const icon = weatherCodeToIcon(code);
+    const tempLabel = Number.isFinite(temp) ? `${Math.round(temp)}°` : "--°";
+    setWeatherStatus(`${icon} ${tempLabel}`);
+  }catch(err){
+    console.error(err);
+    setWeatherStatus("⚠️ Weather unavailable");
+  }
 }
 
 async function loadHubJSON(){
@@ -219,12 +329,14 @@ function renderTodos(){
   todoList.innerHTML = "";
   if(!todos.length){
     todoEmpty.style.display = "block";
+    updateTaskChip();
     return;
   }
   todoEmpty.style.display = "none";
   todos.forEach(todo => {
     todoList.appendChild(createTodoElement(todo));
   });
+  updateTaskChip();
 }
 
 function setCalendarStatus(message){
@@ -477,8 +589,10 @@ async function loadCalendarEvents(){
       const cachedEvents = parseIcsEvents(cached.text)
         .filter(event => event.start instanceof Date && !Number.isNaN(event.start))
         .sort((a, b) => a.start - b.start);
+      calendarEvents = cachedEvents;
       const upcomingCached = selectUpcomingEvents(cachedEvents);
       renderCalendar(upcomingCached);
+      updateCalendarChips(cachedEvents);
       setCalendarStatus("Showing cached events. Refreshing…");
     }else{
       setCalendarStatus("Loading calendar…");
@@ -493,8 +607,10 @@ async function loadCalendarEvents(){
     const events = parseIcsEvents(icsText)
       .filter(event => event.start instanceof Date && !Number.isNaN(event.start))
       .sort((a, b) => a.start - b.start);
+    calendarEvents = events;
     const upcoming = selectUpcomingEvents(events);
     renderCalendar(upcoming);
+    updateCalendarChips(events);
   }catch(err){
     console.error(err);
     const cached = readCalendarCache();
@@ -605,6 +721,7 @@ async function saveToCloud(){
 
 async function refresh(){
   try{
+    updateStatusDate();
     setStatus("Loading cloud data…");
     const data = await loadHubJSON();
     hubData = data;
@@ -628,6 +745,13 @@ async function refresh(){
 
 refreshBtn?.addEventListener("click", refresh);
 saveBtn?.addEventListener("click", saveToCloud);
+weatherForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const zip = weatherZip?.value.trim();
+  if(!zip) return;
+  localStorage.setItem(WEATHER_ZIP_KEY, zip);
+  fetchWeatherForZip(zip);
+});
 
 notesInput?.addEventListener("input", saveNotes);
 todoForm?.addEventListener("submit", (event) => {
@@ -649,4 +773,12 @@ if("serviceWorker" in navigator){
 loadNotes();
 loadTodos();
 renderTodos();
+updateStatusDate();
+updateCalendarChips(calendarEvents);
 refresh();
+
+const storedZip = localStorage.getItem(WEATHER_ZIP_KEY);
+if(weatherZip && storedZip){
+  weatherZip.value = storedZip;
+  fetchWeatherForZip(storedZip);
+}
