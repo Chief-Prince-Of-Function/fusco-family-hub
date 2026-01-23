@@ -1,6 +1,6 @@
 {
   "meta": {
-    "updatedAt": "2026-01-23T03:06:48.419Z",
+    "updatedAt": "2026-01-23T03:08:54.740Z",
     "source": "web"
   },
   "today": {
@@ -12,7 +12,16 @@
     ]
   },
   "notes": "What if we do this.",
-  "todos": [],
+  "todos": [
+    {
+      "id": "27c37fec-088e-4f62-8602-b5d809bb67be",
+      "text": "Fix the roof above Caitlyn's bedroom."
+    },
+    {
+      "id": "96fa3cb1-a870-446b-96ed-a485fa16a3ff",
+      "text": "Replace the front door handle."
+    }
+  ],
   "calendar": {},
   "links": [
     {
