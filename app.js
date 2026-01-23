@@ -347,6 +347,16 @@ function renderCalendar(events){
   setCalendarStatus("");
 }
 
+function selectUpcomingEvents(events, limit = 6){
+  const now = new Date();
+  return events
+    .filter(event => {
+      const end = event.end instanceof Date ? event.end : event.start;
+      return end >= now;
+    })
+    .slice(0, limit);
+}
+
 function buildCalendarUrlVariants(feedUrl){
   const normalized = feedUrl.replace(/^webcal:\/\//i, "https://");
   const variants = [normalized];
@@ -467,13 +477,7 @@ async function loadCalendarEvents(){
       const cachedEvents = parseIcsEvents(cached.text)
         .filter(event => event.start instanceof Date && !Number.isNaN(event.start))
         .sort((a, b) => a.start - b.start);
-      const now = new Date();
-      const horizon = new Date();
-      horizon.setDate(horizon.getDate() + 14);
-      const upcomingCached = cachedEvents.filter(event => {
-        const end = event.end instanceof Date ? event.end : event.start;
-        return end >= now && event.start <= horizon;
-      });
+      const upcomingCached = selectUpcomingEvents(cachedEvents);
       renderCalendar(upcomingCached);
       setCalendarStatus("Showing cached events. Refreshing…");
     }else{
@@ -489,13 +493,7 @@ async function loadCalendarEvents(){
     const events = parseIcsEvents(icsText)
       .filter(event => event.start instanceof Date && !Number.isNaN(event.start))
       .sort((a, b) => a.start - b.start);
-    const now = new Date();
-    const horizon = new Date();
-    horizon.setDate(horizon.getDate() + 14);
-    const upcoming = events.filter(event => {
-      const end = event.end instanceof Date ? event.end : event.start;
-      return end >= now && event.start <= horizon;
-    });
+    const upcoming = selectUpcomingEvents(events);
     renderCalendar(upcoming);
   }catch(err){
     console.error(err);
