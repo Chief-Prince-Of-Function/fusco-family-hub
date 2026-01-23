@@ -10,15 +10,15 @@ const todoInput = document.getElementById("todoInput");
 const todoList = document.getElementById("todoList");
 const todoEmpty = document.getElementById("todoEmpty");
 
-const calendarUrl = document.getElementById("calendarUrl");
-const calendarMeta = document.getElementById("calendarMeta");
+const calendarList = document.getElementById("calendarList");
+const calendarStatus = document.getElementById("calendarStatus");
 
 const refreshBtn = document.getElementById("refreshBtn");
 const saveBtn = document.getElementById("saveBtn");
 
 const NOTES_KEY = "familyHubNotes";
 const TODOS_KEY = "familyHubTodos";
-const CALENDAR_KEY = "familyHubCalendar";
+const CALENDAR_FEED_URL = "https://p118-caldav.icloud.com/published/2/MTAwOTc2MzMxMzEwMDk3NkfBTEalW_8j08aH5ptAb17hc-m1j1maxyi1OQ-k6lyqZrcyzkVqsiLDgydJKgbIX1GMSAVGljZh20EcuHB_law";
 const GITHUB_TOKEN_KEY = "FFH_GITHUB_TOKEN";
 
 let hubData = null;
@@ -187,25 +187,142 @@ function renderTodos(){
   });
 }
 
-function loadCalendar(){
-  if(!calendarUrl) return;
-  const saved = localStorage.getItem(CALENDAR_KEY) || "";
-  calendarUrl.value = saved;
-  if(calendarMeta){
-    calendarMeta.textContent = saved
-      ? "Calendar link saved. We'll hook this up next."
-      : "Add the shared .ics URL and we'll wire it up next.";
-  }
+function setCalendarStatus(message){
+  if(calendarStatus) calendarStatus.textContent = message;
 }
 
-function saveCalendar(){
-  if(!calendarUrl) return;
-  const value = calendarUrl.value.trim();
-  localStorage.setItem(CALENDAR_KEY, value);
-  if(calendarMeta){
-    calendarMeta.textContent = value
-      ? "Calendar link saved. We'll hook this up next."
-      : "Add the shared .ics URL and we'll wire it up next.";
+function unfoldIcs(text){
+  return text.replace(/\r\n/g, "\n").replace(/\n[ \t]/g, "");
+}
+
+function parseIcsDate(value, isAllDay){
+  if(!value) return null;
+  if(isAllDay && /^\d{8}$/.test(value)){
+    const year = Number(value.slice(0, 4));
+    const month = Number(value.slice(4, 6)) - 1;
+    const day = Number(value.slice(6, 8));
+    return new Date(year, month, day);
+  }
+  const match = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?Z?$/);
+  if(match){
+    const [, year, month, day, hour, minute, second] = match;
+    const dateArgs = [
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second || 0)
+    ];
+    if(value.endsWith("Z")){
+      return new Date(Date.UTC(...dateArgs));
+    }
+    return new Date(...dateArgs);
+  }
+  return new Date(value);
+}
+
+function parseIcsEvents(icsText){
+  const events = [];
+  const lines = unfoldIcs(icsText).split("\n");
+  let current = null;
+  for(const line of lines){
+    if(line.startsWith("BEGIN:VEVENT")){
+      current = {};
+      continue;
+    }
+    if(line.startsWith("END:VEVENT")){
+      if(current){
+        events.push(current);
+      }
+      current = null;
+      continue;
+    }
+    if(!current) continue;
+    const [rawKey, ...rest] = line.split(":");
+    if(!rawKey || rest.length === 0) continue;
+    const value = rest.join(":").trim();
+    const keyParts = rawKey.split(";");
+    const key = keyParts[0].toUpperCase();
+    const params = keyParts.slice(1);
+    if(key === "SUMMARY"){
+      current.summary = value;
+    }else if(key === "LOCATION"){
+      current.location = value;
+    }else if(key === "DTSTART"){
+      const isAllDay = params.some(param => param.toUpperCase().includes("VALUE=DATE"));
+      current.start = parseIcsDate(value, isAllDay);
+      current.allDay = isAllDay;
+    }else if(key === "DTEND"){
+      const isAllDay = params.some(param => param.toUpperCase().includes("VALUE=DATE"));
+      current.end = parseIcsDate(value, isAllDay);
+    }
+  }
+  return events;
+}
+
+function formatCalendarEvent(event){
+  const dateFormatter = new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric"
+  });
+  const timeFormatter = new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit"
+  });
+  if(event.allDay){
+    return dateFormatter.format(event.start);
+  }
+  const startTime = timeFormatter.format(event.start);
+  const endTime = event.end ? timeFormatter.format(event.end) : null;
+  return `${dateFormatter.format(event.start)} · ${startTime}${endTime ? ` - ${endTime}` : ""}`;
+}
+
+function renderCalendar(events){
+  if(!calendarList) return;
+  calendarList.innerHTML = "";
+  if(!events.length){
+    setCalendarStatus("No upcoming events.");
+    return;
+  }
+  events.forEach(event => {
+    const item = document.createElement("div");
+    item.className = "calendarItem";
+    const when = document.createElement("div");
+    when.className = "calendarWhen";
+    when.textContent = formatCalendarEvent(event);
+    const summary = document.createElement("div");
+    summary.className = "calendarSummary";
+    summary.textContent = event.summary || "Untitled event";
+    item.appendChild(when);
+    item.appendChild(summary);
+    calendarList.appendChild(item);
+  });
+  setCalendarStatus("");
+}
+
+async function loadCalendarEvents(){
+  if(!calendarList) return;
+  try{
+    setCalendarStatus("Loading calendar…");
+    const response = await fetch(CALENDAR_FEED_URL, { cache: "no-store" });
+    if(!response.ok) throw new Error(`Calendar fetch failed (${response.status})`);
+    const icsText = await response.text();
+    const events = parseIcsEvents(icsText)
+      .filter(event => event.start instanceof Date && !Number.isNaN(event.start))
+      .sort((a, b) => a.start - b.start);
+    const now = new Date();
+    const horizon = new Date();
+    horizon.setDate(horizon.getDate() + 14);
+    const upcoming = events.filter(event => {
+      const end = event.end instanceof Date ? event.end : event.start;
+      return end >= now && event.start <= horizon;
+    });
+    renderCalendar(upcoming);
+  }catch(err){
+    console.error(err);
+    setCalendarStatus("Could not load calendar.");
   }
 }
 
@@ -238,7 +355,7 @@ function getGithubToken(){
 
 function buildPayload(){
   const notes = notesInput?.value ?? "";
-  const calendarValue = calendarUrl?.value?.trim() ?? "";
+  const calendarValue = hubData?.calendar?.url || CALENDAR_FEED_URL;
   const payload = {
     meta: {
       updatedAt: new Date().toISOString(),
@@ -321,6 +438,8 @@ async function refresh(){
     setStatus("Could not load hub.json (check GitHub Pages + path).");
     todayBlock.innerHTML = `<div class="muted">Error loading data.</div>`;
     footerMeta.textContent = "data: —";
+  }finally{
+    loadCalendarEvents();
   }
 }
 
@@ -337,8 +456,6 @@ todoForm?.addEventListener("submit", (event) => {
   saveTodos();
   renderTodos();
 });
-calendarUrl?.addEventListener("change", saveCalendar);
-calendarUrl?.addEventListener("blur", saveCalendar);
 
 if("serviceWorker" in navigator){
   window.addEventListener("load", ()=>{
@@ -349,5 +466,4 @@ if("serviceWorker" in navigator){
 loadNotes();
 loadTodos();
 renderTodos();
-loadCalendar();
 refresh();
