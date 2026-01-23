@@ -36,6 +36,25 @@
   </header>
 
   <main class="wrap">
+    <section class="statusBar" aria-label="Family Status Bar">
+      <div class="statusInfo">
+        <div class="statusTitle">Fusco Family Hub</div>
+        <div class="statusDate" id="statusDate">Today is —</div>
+      </div>
+      <div class="statusChips">
+        <div class="statusChip" id="tasksChip">✅ 0 tasks left</div>
+        <div class="statusChip" id="eventsChip">📅 0 events today</div>
+        <div class="statusChip" id="nextChip">⏱ Next up: —</div>
+        <div class="statusChip weatherChip">
+          <span class="weatherValue" id="weatherValue">🌤 --°</span>
+          <form class="weatherForm" id="weatherForm">
+            <label class="srOnly" for="weatherZip">Zip</label>
+            <input id="weatherZip" class="textInput weatherInput" type="text" inputmode="numeric" placeholder="Zip" maxlength="10" />
+            <button class="btn small ghost" type="submit">Go</button>
+          </form>
+        </div>
+      </div>
+    </section>
     <section class="grid">
       <article class="card">
         <h2 class="cardTitle">Notes</h2>
