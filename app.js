@@ -20,9 +20,10 @@ const NOTES_KEY = "familyHubNotes";
 const TODOS_KEY = "familyHubTodos";
 const CALENDAR_FEED_URL = "https://p118-caldav.icloud.com/published/2/MTAwOTc2MzMxMzEwMDk3NkfBTEalW_8j08aH5ptAb17hc-m1j1maxyi1OQ-k6lyqZrcyzkVqsiLDgydJKgbIX1GMSAVGljZh20EcuHB_law";
 const CALENDAR_FETCH_STRATEGIES = [
-  { label: "direct", build: (url) => url },
   { label: "allorigins", build: (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}` },
-  { label: "cors-isomorphic", build: (url) => `https://cors.isomorphic-git.org/${url}` }
+  { label: "corsproxy", build: (url) => `https://corsproxy.io/?${encodeURIComponent(url)}` },
+  { label: "cors-isomorphic", build: (url) => `https://cors.isomorphic-git.org/${url}` },
+  { label: "direct", build: (url) => url }
 ];
 const GITHUB_TOKEN_KEY = "FFH_GITHUB_TOKEN";
 
