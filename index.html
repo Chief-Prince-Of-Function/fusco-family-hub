@@ -1,1 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1020" />
+  <title>Fusco Family Hub</title>
 
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+
+  <!-- Icons -->
+  <link rel="icon" href="assets/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" href="assets/favicon-32.png" />
+  <link rel="apple-touch-icon" href="assets/icon-192.png" />
+
+  <link rel="stylesheet" href="app.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img class="brandIcon" src="assets/icon-192.png" alt="" />
+      <div class="brandText">
+        <div class="brandTitle">Fusco Family Hub</div>
+        <div class="brandSub" id="status">Loading…</div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn ghost" id="refreshBtn" type="button">Refresh</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="grid">
+      <article class="card">
+        <h2 class="cardTitle">Today</h2>
+        <div class="cardBody" id="todayBlock">
+          <div class="muted">No data yet.</div>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2 class="cardTitle">Quick Links</h2>
+        <div class="cardBody" id="linksBlock">
+          <div class="muted">No links yet.</div>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2 class="cardTitle">Notes</h2>
+        <div class="cardBody" id="notesBlock">
+          <div class="muted">No notes yet.</div>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="muted" id="footerMeta">—</div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
