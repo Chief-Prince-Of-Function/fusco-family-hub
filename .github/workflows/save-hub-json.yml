@@ -1,0 +1,46 @@
+name: Save Hub JSON
+
+on:
+  workflow_dispatch:
+    inputs:
+      payload:
+        description: Stringified JSON payload for data/hub.json
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  save-hub-json:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Write hub.json
+        env:
+          PAYLOAD: ${{ inputs.payload }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = os.environ["PAYLOAD"]
+          data = json.loads(payload)
+          path = Path("data/hub.json")
+          path.write_text(json.dumps(data, indent=2) + "\n")
+          PY
+
+      - name: Commit and push
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/hub.json
+          git commit -m "Update hub.json"
+          git push origin main
