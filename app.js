@@ -18,7 +18,7 @@ const saveBtn = document.getElementById("saveBtn");
 
 const NOTES_KEY = "familyHubNotes";
 const TODOS_KEY = "familyHubTodos";
-const CALENDAR_FEED_URL = "https://p118-caldav.icloud.com/published/2/MTAwOTc2MzMxMzEwMDk3NkfBTEalW_8j08aH5ptAb17hc-m1j1maxyi1OQ-k6lyqZrcyzkVqsiLDgydJKgbIX1GMSAVGljZh20EcuHB_law";
+const CALENDAR_FEED_URL = "webcal://p118-caldav.icloud.com/published/2/MTAwOTc2MzMxMzEwMDk3NkfBTEalW_8j08aH5ptAb17hc-m1j1maxyi1OQ-k6lyqZrcyzkVqsiLDgydJKgbIX1GMSAVGljZh20EcuHB_law";
 const CALENDAR_FETCH_STRATEGIES = [
   { label: "allorigins", build: (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}` },
   { label: "corsproxy", build: (url) => `https://corsproxy.io/?${encodeURIComponent(url)}` },
@@ -75,6 +75,18 @@ function setNotesMeta(message){
   if(notesMeta) notesMeta.textContent = message;
 }
 
+function hydrateNotesFromCloud(data){
+  if(!notesInput) return;
+  const saved = localStorage.getItem(NOTES_KEY);
+  if(saved && saved.trim().length) return;
+  const cloudNotes = data?.notes;
+  if(typeof cloudNotes === "string"){
+    notesInput.value = cloudNotes;
+    localStorage.setItem(NOTES_KEY, cloudNotes);
+    setNotesMeta("Loaded notes from cloud data.");
+  }
+}
+
 function loadNotes(){
   if(!notesInput) return;
   const saved = localStorage.getItem(NOTES_KEY) || "";
@@ -101,6 +113,25 @@ function loadTodos(){
   }catch{
     todos = [];
   }
+}
+
+function hydrateTodosFromCloud(data){
+  try{
+    const stored = JSON.parse(localStorage.getItem(TODOS_KEY) || "[]");
+    if(Array.isArray(stored) && stored.length){
+      todos = stored;
+      return;
+    }
+  }catch{
+    // ignore storage parse errors
+  }
+  const cloudTodos = Array.isArray(data?.todos) ? data.todos : [];
+  if(!cloudTodos.length) return;
+  todos = cloudTodos.map(item => ({
+    id: item.id || crypto.randomUUID(),
+    text: item.text || ""
+  }));
+  saveTodos();
 }
 
 function createTodoElement(todo){
@@ -318,22 +349,34 @@ function renderCalendar(events){
 function buildCalendarUrlVariants(feedUrl){
   const normalized = feedUrl.replace(/^webcal:\/\//i, "https://");
   const variants = [normalized];
-  if(normalized !== feedUrl){
+  const isWebcal = feedUrl.toLowerCase().startsWith("webcal://");
+  if(normalized !== feedUrl && !isWebcal){
     variants.push(feedUrl);
   }
-  if(!feedUrl.endsWith(".ics")){
-    variants.push(`${feedUrl}.ics`);
+  const variantBase = isWebcal ? normalized : feedUrl;
+  if(!variantBase.endsWith(".ics")){
+    variants.push(`${variantBase}.ics`);
   }
-  if(!normalized.endsWith(".ics")){
+  if(!normalized.endsWith(".ics") && normalized !== variantBase){
     variants.push(`${normalized}.ics`);
   }
-  if(!feedUrl.includes("?")){
-    variants.push(`${feedUrl}?format=ics`);
+  if(!variantBase.includes("?")){
+    variants.push(`${variantBase}?format=ics`);
   }
-  if(!normalized.includes("?")){
+  if(!normalized.includes("?") && normalized !== variantBase){
     variants.push(`${normalized}?format=ics`);
   }
   return Array.from(new Set(variants));
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 8000){
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try{
+    return await fetch(url, { ...options, signal: controller.signal });
+  }finally{
+    clearTimeout(timeout);
+  }
 }
 
 async function loadCalendarEvents(){
@@ -351,7 +394,7 @@ async function loadCalendarEvents(){
     for(const variant of feedVariants){
       for(const strategy of CALENDAR_FETCH_STRATEGIES){
         try{
-          const response = await fetch(strategy.build(variant), { cache: "no-store" });
+          const response = await fetchWithTimeout(strategy.build(variant), { cache: "no-store" });
           if(!response.ok) throw new Error(`${strategy.label} fetch failed (${response.status})`);
           icsText = await response.text();
           if(icsText){
@@ -492,6 +535,9 @@ async function refresh(){
 
     renderToday(data);
     renderMeta(data);
+    hydrateNotesFromCloud(data);
+    hydrateTodosFromCloud(data);
+    renderTodos();
 
     setStatus("Loaded from ./data/hub.json");
   }catch(err){
