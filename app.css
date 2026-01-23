@@ -252,6 +252,65 @@ a:hover{ text-decoration: underline; }
 }
 .todoInputRow .textInput{ flex: 1; }
 
+.plannerCard{
+  display:flex;
+  flex-direction:column;
+  gap: 16px;
+}
+.plannerSection{
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+}
+.plannerForm{
+  display:flex;
+  flex-direction:column;
+  gap: 8px;
+}
+.plannerInputRow{
+  display:flex;
+  gap: 10px;
+  align-items:center;
+}
+.plannerInputRow .textInput{ flex: 1; }
+.plannerList{
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+}
+.plannerItem{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,.06);
+}
+.plannerItem.dragging{ opacity: .6; }
+.plannerItem.over{ border-color: rgba(130,170,255,.6); }
+.plannerDrag{
+  font-size: 16px;
+  cursor: grab;
+  color: var(--muted);
+}
+.plannerText{
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  padding: 4px 0;
+}
+.plannerText:focus{
+  outline: none;
+  border-bottom: 1px solid rgba(130,170,255,.6);
+}
+.plannerActions{
+  display:flex;
+  gap: 8px;
+}
+
 .todoList{
   display:flex;
   flex-direction:column;

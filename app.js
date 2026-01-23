@@ -18,6 +18,16 @@ const todoInput = document.getElementById("todoInput");
 const todoList = document.getElementById("todoList");
 const todoEmpty = document.getElementById("todoEmpty");
 
+const dinnerForm = document.getElementById("dinnerForm");
+const dinnerInput = document.getElementById("dinnerInput");
+const dinnerList = document.getElementById("dinnerList");
+const dinnerEmpty = document.getElementById("dinnerEmpty");
+
+const groceryForm = document.getElementById("groceryForm");
+const groceryInput = document.getElementById("groceryInput");
+const groceryList = document.getElementById("groceryList");
+const groceryEmpty = document.getElementById("groceryEmpty");
+
 const calendarList = document.getElementById("calendarList");
 const calendarStatus = document.getElementById("calendarStatus");
 
@@ -26,6 +36,8 @@ const saveBtn = document.getElementById("saveBtn");
 
 const NOTES_KEY = "familyHubNotes";
 const TODOS_KEY = "familyHubTodos";
+const DINNER_IDEAS_KEY = "familyHubDinnerIdeas";
+const GROCERY_LIST_KEY = "familyHubGroceries";
 const WEATHER_ZIP_KEY = "familyHubWeatherZip";
 const CALENDAR_FEED_URL = "https://p118-caldav.icloud.com/published/2/MTAwOTc2MzMxMzEwMDk3NkfBTEalW_8j08aH5ptAb17hc-m1j1maxyi1OQ-k6lyqZrcyzkVqsiLDgydJKgbIX1GMSAVGljZh20EcuHB_law";
 const CALENDAR_FETCH_STRATEGIES = [
@@ -80,6 +92,27 @@ function isSameDay(dateA, dateB){
     && dateA.getDate() === dateB.getDate();
 }
 
+function endOfDay(date){
+  const end = new Date(date);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
+function getEventEnd(event){
+  if(event.end instanceof Date && !Number.isNaN(event.end)) return event.end;
+  if(event.allDay && event.start instanceof Date) return endOfDay(event.start);
+  if(event.start instanceof Date) return new Date(event.start.getTime() + 60 * 60 * 1000);
+  return null;
+}
+
+function getEventSortStart(event, now){
+  if(!(event.start instanceof Date)) return null;
+  if(event.allDay && isSameDay(event.start, now) && event.start < now){
+    return endOfDay(event.start);
+  }
+  return event.start;
+}
+
 function buildNextEventLabel(event){
   const summary = event.summary || "Untitled event";
   if(event.allDay){
@@ -99,12 +132,17 @@ function updateCalendarChips(events){
     eventsChip.textContent = `📅 ${count} ${pluralize(count, "event")} today`;
   }
   if(nextChip){
-    const sorted = [...events].filter(event => event.start instanceof Date).sort((a, b) => a.start - b.start);
+    const sorted = [...events]
+      .filter(event => event.start instanceof Date)
+      .sort((a, b) => {
+        const startA = getEventSortStart(a, now);
+        const startB = getEventSortStart(b, now);
+        if(!startA || !startB) return 0;
+        return startA - startB;
+      });
     const next = sorted.find(event => {
-      if(event.allDay){
-        return isSameDay(event.start, now) || event.start > now;
-      }
-      return event.start >= now;
+      const sortStart = getEventSortStart(event, now);
+      return sortStart && sortStart >= now;
     });
     nextChip.textContent = next ? `⏱ Next up: ${buildNextEventLabel(next)}` : "⏱ Next up: —";
   }
@@ -212,6 +250,8 @@ function saveNotes(){
 }
 
 let todos = [];
+let dinnerIdeas = [];
+let groceryItems = [];
 
 function saveTodos(){
   localStorage.setItem(TODOS_KEY, JSON.stringify(todos));
@@ -224,6 +264,11 @@ function loadTodos(){
   }catch{
     todos = [];
   }
+}
+
+function loadPlannerLists(){
+  dinnerIdeas = loadPlannerList(DINNER_IDEAS_KEY);
+  groceryItems = loadPlannerList(GROCERY_LIST_KEY);
 }
 
 function hydrateTodosFromCloud(data){
@@ -243,6 +288,14 @@ function hydrateTodosFromCloud(data){
     text: item.text || ""
   }));
   saveTodos();
+}
+
+function hydrateDinnerIdeasFromCloud(data){
+  dinnerIdeas = hydratePlannerListFromCloud(DINNER_IDEAS_KEY, data?.dinnerIdeas);
+}
+
+function hydrateGroceryItemsFromCloud(data){
+  groceryItems = hydratePlannerListFromCloud(GROCERY_LIST_KEY, data?.groceries);
 }
 
 function createTodoElement(todo){
@@ -337,6 +390,144 @@ function renderTodos(){
     todoList.appendChild(createTodoElement(todo));
   });
   updateTaskChip();
+}
+
+function savePlannerList(key, list){
+  localStorage.setItem(key, JSON.stringify(list));
+}
+
+function loadPlannerList(key){
+  try{
+    const stored = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(stored) ? stored : [];
+  }catch{
+    return [];
+  }
+}
+
+function hydratePlannerListFromCloud(key, cloudItems){
+  const stored = loadPlannerList(key);
+  if(stored.length) return stored;
+  if(!Array.isArray(cloudItems) || !cloudItems.length) return [];
+  const hydrated = cloudItems.map(item => ({
+    id: item.id || crypto.randomUUID(),
+    text: item.text || ""
+  }));
+  savePlannerList(key, hydrated);
+  return hydrated;
+}
+
+function createPlannerItemElement(item, list, { save, render }){
+  const row = document.createElement("div");
+  row.className = "plannerItem";
+  row.draggable = true;
+  row.dataset.id = item.id;
+
+  const dragHandle = document.createElement("div");
+  dragHandle.className = "plannerDrag";
+  dragHandle.textContent = "⋮⋮";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "plannerText";
+  input.value = item.text;
+  const commit = () => {
+    const next = input.value.trim();
+    item.text = next;
+    input.value = next;
+    save();
+  };
+  input.addEventListener("change", commit);
+  input.addEventListener("blur", commit);
+
+  const actions = document.createElement("div");
+  actions.className = "plannerActions";
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "btn small ghost";
+  deleteBtn.textContent = "Delete";
+  deleteBtn.addEventListener("click", () => {
+    const index = list.findIndex(entry => entry.id === item.id);
+    if(index !== -1){
+      list.splice(index, 1);
+    }
+    save();
+    render();
+  });
+
+  actions.appendChild(deleteBtn);
+
+  row.appendChild(dragHandle);
+  row.appendChild(input);
+  row.appendChild(actions);
+
+  row.addEventListener("dragstart", (event) => {
+    row.classList.add("dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", item.id);
+  });
+  row.addEventListener("dragend", () => {
+    row.classList.remove("dragging");
+  });
+  row.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    row.classList.add("over");
+    event.dataTransfer.dropEffect = "move";
+  });
+  row.addEventListener("dragleave", () => {
+    row.classList.remove("over");
+  });
+  row.addEventListener("drop", (event) => {
+    event.preventDefault();
+    row.classList.remove("over");
+    const draggedId = event.dataTransfer.getData("text/plain");
+    if(!draggedId || draggedId === item.id) return;
+    const fromIndex = list.findIndex(entry => entry.id === draggedId);
+    const toIndex = list.findIndex(entry => entry.id === item.id);
+    if(fromIndex === -1 || toIndex === -1) return;
+    const [moved] = list.splice(fromIndex, 1);
+    list.splice(toIndex, 0, moved);
+    save();
+    render();
+  });
+
+  return row;
+}
+
+function renderPlannerList(list, listEl, emptyEl, { save, render }){
+  if(!listEl || !emptyEl) return;
+  listEl.innerHTML = "";
+  if(!list.length){
+    emptyEl.style.display = "block";
+    return;
+  }
+  emptyEl.style.display = "none";
+  list.forEach(item => {
+    listEl.appendChild(createPlannerItemElement(item, list, { save, render }));
+  });
+}
+
+function saveDinnerIdeas(){
+  savePlannerList(DINNER_IDEAS_KEY, dinnerIdeas);
+}
+
+function saveGroceryItems(){
+  savePlannerList(GROCERY_LIST_KEY, groceryItems);
+}
+
+function renderDinnerIdeas(){
+  renderPlannerList(dinnerIdeas, dinnerList, dinnerEmpty, {
+    save: saveDinnerIdeas,
+    render: renderDinnerIdeas
+  });
+}
+
+function renderGroceryItems(){
+  renderPlannerList(groceryItems, groceryList, groceryEmpty, {
+    save: saveGroceryItems,
+    render: renderGroceryItems
+  });
 }
 
 function setCalendarStatus(message){
@@ -463,9 +654,10 @@ function selectUpcomingEvents(events, limit = 6){
   const now = new Date();
   return events
     .filter(event => {
-      const end = event.end instanceof Date ? event.end : event.start;
-      return end >= now;
+      const end = getEventEnd(event);
+      return end && end >= now;
     })
+    .sort((a, b) => a.start - b.start)
     .slice(0, limit);
 }
 
@@ -660,6 +852,8 @@ function buildPayload(){
     today: hubData?.today ?? {},
     notes,
     todos,
+    dinnerIdeas,
+    groceries: groceryItems,
     calendar: calendarValue ? { url: calendarValue } : {}
   };
 
@@ -730,7 +924,11 @@ async function refresh(){
     renderMeta(data);
     hydrateNotesFromCloud(data);
     hydrateTodosFromCloud(data);
+    hydrateDinnerIdeasFromCloud(data);
+    hydrateGroceryItemsFromCloud(data);
     renderTodos();
+    renderDinnerIdeas();
+    renderGroceryItems();
 
     setStatus("Loaded from ./data/hub.json");
   }catch(err){
@@ -764,6 +962,26 @@ todoForm?.addEventListener("submit", (event) => {
   renderTodos();
 });
 
+dinnerForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const value = dinnerInput?.value.trim();
+  if(!value) return;
+  dinnerIdeas.push({ id: crypto.randomUUID(), text: value });
+  dinnerInput.value = "";
+  saveDinnerIdeas();
+  renderDinnerIdeas();
+});
+
+groceryForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const value = groceryInput?.value.trim();
+  if(!value) return;
+  groceryItems.push({ id: crypto.randomUUID(), text: value });
+  groceryInput.value = "";
+  saveGroceryItems();
+  renderGroceryItems();
+});
+
 if("serviceWorker" in navigator){
   window.addEventListener("load", ()=>{
     navigator.serviceWorker.register("./service-worker.js").catch(()=>{});
@@ -773,6 +991,9 @@ if("serviceWorker" in navigator){
 loadNotes();
 loadTodos();
 renderTodos();
+loadPlannerLists();
+renderDinnerIdeas();
+renderGroceryItems();
 updateStatusDate();
 updateCalendarChips(calendarEvents);
 refresh();

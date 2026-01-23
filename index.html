@@ -81,6 +81,35 @@
       </article>
 
       <article class="card">
+        <h2 class="cardTitle">Dinner + Groceries</h2>
+        <div class="cardBody plannerCard">
+          <section class="plannerSection">
+            <form class="plannerForm" id="dinnerForm">
+              <label class="inputLabel" for="dinnerInput">Dinner ideas</label>
+              <div class="plannerInputRow">
+                <input id="dinnerInput" class="textInput" type="text" placeholder="Add a dinner idea" autocomplete="off" />
+                <button class="btn" type="submit">Add</button>
+              </div>
+            </form>
+            <div class="muted" id="dinnerEmpty">No dinner ideas yet.</div>
+            <div class="plannerList" id="dinnerList" aria-live="polite"></div>
+          </section>
+
+          <section class="plannerSection">
+            <form class="plannerForm" id="groceryForm">
+              <label class="inputLabel" for="groceryInput">Groceries</label>
+              <div class="plannerInputRow">
+                <input id="groceryInput" class="textInput" type="text" placeholder="Add a grocery item" autocomplete="off" />
+                <button class="btn" type="submit">Add</button>
+              </div>
+            </form>
+            <div class="muted" id="groceryEmpty">No groceries yet.</div>
+            <div class="plannerList" id="groceryList" aria-live="polite"></div>
+          </section>
+        </div>
+      </article>
+
+      <article class="card">
         <h2 class="cardTitle">Calendar</h2>
         <div class="cardBody">
           <div class="calendarList" id="calendarList"></div>
