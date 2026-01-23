@@ -27,6 +27,8 @@ const CALENDAR_FETCH_STRATEGIES = [
   { label: "direct", build: (url) => url }
 ];
 const GITHUB_TOKEN_KEY = "FFH_GITHUB_TOKEN";
+const CALENDAR_CACHE_KEY = "familyHubCalendarCache";
+const CALENDAR_CACHE_TTL_MS = 1000 * 60 * 60 * 6;
 
 let hubData = null;
 let isSaving = false;
@@ -368,6 +370,32 @@ function buildCalendarUrlVariants(feedUrl){
   return Array.from(new Set(variants));
 }
 
+function isValidIcs(text){
+  return typeof text === "string" && text.includes("BEGIN:VCALENDAR");
+}
+
+function readCalendarCache(){
+  try{
+    const cached = JSON.parse(localStorage.getItem(CALENDAR_CACHE_KEY) || "null");
+    if(!cached || !cached.text) return null;
+    if(Date.now() - (cached.updatedAt || 0) > CALENDAR_CACHE_TTL_MS) return null;
+    return cached;
+  }catch{
+    return null;
+  }
+}
+
+function writeCalendarCache(text){
+  try{
+    localStorage.setItem(
+      CALENDAR_CACHE_KEY,
+      JSON.stringify({ text, updatedAt: Date.now() })
+    );
+  }catch{
+    // ignore storage errors
+  }
+}
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 8000){
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -378,6 +406,54 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 8000){
   }
 }
 
+async function fetchCalendarText(feedVariants){
+  const candidates = [];
+  feedVariants.forEach(variant => {
+    CALENDAR_FETCH_STRATEGIES.forEach(strategy => {
+      candidates.push({
+        label: strategy.label,
+        url: strategy.build(variant)
+      });
+    });
+  });
+
+  const errors = [];
+  const attempt = async ({ label, url }) => {
+    const response = await fetchWithTimeout(
+      url,
+      {
+        cache: "no-store",
+        headers: { Accept: "text/calendar,*/*" }
+      },
+      7000
+    );
+    if(!response.ok) throw new Error(`${label} fetch failed (${response.status})`);
+    const text = await response.text();
+    if(!isValidIcs(text)){
+      throw new Error(`${label} returned non-ICS data`);
+    }
+    return { text, label };
+  };
+
+  if(typeof Promise.any === "function"){
+    try{
+      return await Promise.any(candidates.map(attempt));
+    }catch{
+      // fall through to sequential attempts for better error info
+    }
+  }
+
+  for(const candidate of candidates){
+    try{
+      return await attempt(candidate);
+    }catch(err){
+      errors.push(err.message || `${candidate.label} fetch failed`);
+    }
+  }
+
+  throw new Error(`Calendar fetch failed. ${errors.join(" | ")}`);
+}
+
 async function loadCalendarEvents(){
   if(!calendarList) return;
   try{
@@ -386,32 +462,30 @@ async function loadCalendarEvents(){
       setCalendarStatus("No calendar feed configured.");
       return;
     }
-    setCalendarStatus("Loading calendar…");
-    let icsText = "";
-    const errors = [];
+    const cached = readCalendarCache();
+    if(cached?.text){
+      const cachedEvents = parseIcsEvents(cached.text)
+        .filter(event => event.start instanceof Date && !Number.isNaN(event.start))
+        .sort((a, b) => a.start - b.start);
+      const now = new Date();
+      const horizon = new Date();
+      horizon.setDate(horizon.getDate() + 14);
+      const upcomingCached = cachedEvents.filter(event => {
+        const end = event.end instanceof Date ? event.end : event.start;
+        return end >= now && event.start <= horizon;
+      });
+      renderCalendar(upcomingCached);
+      setCalendarStatus("Showing cached events. Refreshing…");
+    }else{
+      setCalendarStatus("Loading calendar…");
+    }
+
     const feedVariants = buildCalendarUrlVariants(feedUrl);
-    for(const variant of feedVariants){
-      for(const strategy of CALENDAR_FETCH_STRATEGIES){
-        try{
-          const response = await fetchWithTimeout(strategy.build(variant), { cache: "no-store" });
-          if(!response.ok) throw new Error(`${strategy.label} fetch failed (${response.status})`);
-          icsText = await response.text();
-          if(icsText){
-            if(strategy.label !== "direct"){
-              console.info(`Calendar loaded via ${strategy.label} proxy.`);
-            }
-            break;
-          }
-          errors.push(`${strategy.label} returned empty response`);
-        }catch(err){
-          errors.push(err.message || `${strategy.label} fetch failed`);
-        }
-      }
-      if(icsText) break;
+    const { text: icsText, label } = await fetchCalendarText(feedVariants);
+    if(label && label !== "direct"){
+      console.info(`Calendar loaded via ${label} proxy.`);
     }
-    if(!icsText){
-      throw new Error(`Calendar fetch failed. ${errors.join(" | ")}`);
-    }
+    writeCalendarCache(icsText);
     const events = parseIcsEvents(icsText)
       .filter(event => event.start instanceof Date && !Number.isNaN(event.start))
       .sort((a, b) => a.start - b.start);
@@ -425,7 +499,12 @@ async function loadCalendarEvents(){
     renderCalendar(upcoming);
   }catch(err){
     console.error(err);
-    setCalendarStatus("Could not load calendar. Check the feed URL or CORS settings.");
+    const cached = readCalendarCache();
+    if(cached?.text){
+      setCalendarStatus("Using cached events. Could not refresh calendar.");
+    }else{
+      setCalendarStatus("Could not load calendar. Check the feed URL or CORS settings.");
+    }
   }
 }
 
