@@ -26,8 +26,14 @@ function setSyncStatus(msg){
 async function api(path, options = {}){
   const method = (options.method || "GET").toUpperCase();
   const headers = { ...(options.headers || {}) };
+  const logLabel = options.logLabel || `${method} ${path}`;
+  const shouldLog = Boolean(options.logLabel);
   if ((method === "POST" || method === "PUT") && options.body && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
+  }
+
+  if (shouldLog) {
+    console.log(`[save:${logLabel}] before request`, { path, method, body: options.body || null });
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -35,7 +41,15 @@ async function api(path, options = {}){
     method,
     headers
   });
+
+  if (shouldLog) {
+    console.log(`[save:${logLabel}] response status`, response.status);
+  }
+
   const data = await response.json().catch(() => ({}));
+  if (shouldLog) {
+    console.log(`[save:${logLabel}] parsed response JSON`, data);
+  }
   if(!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
   return data;
 }
@@ -201,13 +215,13 @@ function metaRow(updatedAt, createdAt){
 
 function renderAll(){ renderTasks(); renderNotes(); renderMeals(); renderLinks(); }
 
-async function createTask(payload){ await api("/api/tasks", { method: "POST", body: JSON.stringify(payload) }); await refreshAll(); }
+async function createTask(payload){ await api("/api/tasks", { method: "POST", body: JSON.stringify(payload), logLabel: "tasks:create" }); await refreshAll(); }
 async function updateTask(id, payload){ await api(`/api/tasks/${id}`, { method: "PUT", body: JSON.stringify(payload) }); await refreshAll(); }
-async function createNote(payload){ await api("/api/notes", { method: "POST", body: JSON.stringify(payload) }); await refreshAll(); }
+async function createNote(payload){ await api("/api/notes", { method: "POST", body: JSON.stringify(payload), logLabel: "notes:create" }); await refreshAll(); }
 async function updateNote(id, payload){ await api(`/api/notes/${id}`, { method: "PUT", body: JSON.stringify(payload) }); await refreshAll(); }
-async function createMeal(payload){ await api("/api/meals", { method: "POST", body: JSON.stringify(payload) }); await refreshAll(); }
+async function createMeal(payload){ await api("/api/meals", { method: "POST", body: JSON.stringify(payload), logLabel: "meals:create" }); await refreshAll(); }
 async function updateMeal(id, payload){ await api(`/api/meals/${id}`, { method: "PUT", body: JSON.stringify(payload) }); await refreshAll(); }
-async function createLink(payload){ await api("/api/links", { method: "POST", body: JSON.stringify(payload) }); await refreshAll(); }
+async function createLink(payload){ await api("/api/links", { method: "POST", body: JSON.stringify(payload), logLabel: "links:create" }); await refreshAll(); }
 async function updateLink(id, payload){ await api(`/api/links/${id}`, { method: "PUT", body: JSON.stringify(payload) }); await refreshAll(); }
 
 async function removeItem(type, id){
@@ -249,16 +263,28 @@ function bindEvents(){
     e.preventDefault();
     const title = el.taskTitle.value.trim();
     if(!title) return;
-    await createTask({ title, assignee: el.taskAssignee.value.trim() || null });
-    el.taskForm.reset();
+    try {
+      await createTask({ title, assignee: el.taskAssignee.value.trim() || null });
+      el.taskForm.reset();
+    } catch (error) {
+      console.error("Task save failed", error);
+      setSyncStatus(`Task not saved: ${error.message}`);
+      alert(`Could not save task: ${error.message}`);
+    }
   });
 
   el.noteForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const content = el.noteContent.value.trim();
     if(!content) return;
-    await createNote({ content });
-    el.noteForm.reset();
+    try {
+      await createNote({ content });
+      el.noteForm.reset();
+    } catch (error) {
+      console.error("Note save failed", error);
+      setSyncStatus(`Note not saved: ${error.message}`);
+      alert(`Could not save note: ${error.message}`);
+    }
   });
 
   el.mealForm.addEventListener("submit", async (e) => {
@@ -266,8 +292,14 @@ function bindEvents(){
     const day = el.mealDay.value.trim();
     const meal = el.mealName.value.trim();
     if(!day || !meal) return;
-    await createMeal({ day, meal, notes: el.mealNotes.value.trim() || null });
-    el.mealForm.reset();
+    try {
+      await createMeal({ day, meal, notes: el.mealNotes.value.trim() || null });
+      el.mealForm.reset();
+    } catch (error) {
+      console.error("Meal save failed", error);
+      setSyncStatus(`Meal not saved: ${error.message}`);
+      alert(`Could not save meal: ${error.message}`);
+    }
   });
 
   el.linkForm.addEventListener("submit", async (e) => {
@@ -275,8 +307,14 @@ function bindEvents(){
     const title = el.linkTitle.value.trim();
     const url = el.linkUrl.value.trim();
     if(!title || !url) return;
-    await createLink({ title, url, icon: el.linkIcon.value.trim() || null });
-    el.linkForm.reset();
+    try {
+      await createLink({ title, url, icon: el.linkIcon.value.trim() || null });
+      el.linkForm.reset();
+    } catch (error) {
+      console.error("Link save failed", error);
+      setSyncStatus(`Link not saved: ${error.message}`);
+      alert(`Could not save link: ${error.message}`);
+    }
   });
 }
 
