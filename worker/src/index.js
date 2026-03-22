@@ -3,17 +3,20 @@
  * Uses D1 binding: env.DB
  */
 
+const ALLOWED_ORIGIN = "https://chief-prince-of-function.github.io";
+
 const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type"
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+  Vary: "Origin"
 };
 
 export default {
   async fetch(request, env) {
     try {
       if (request.method === "OPTIONS") {
-        return new Response(null, { status: 204, headers: CORS_HEADERS });
+        return corsResponse(204);
       }
 
       await initializeTables(env.DB);
@@ -52,11 +55,19 @@ function idFromPath(path) {
   return Number(path.split("/").pop());
 }
 
+function corsHeaders(extraHeaders = {}) {
+  return { ...CORS_HEADERS, ...extraHeaders };
+}
+
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+    headers: corsHeaders({ "Content-Type": "application/json" })
   });
+}
+
+function corsResponse(status = 204) {
+  return new Response(null, { status, headers: corsHeaders() });
 }
 
 let initialized = false;
