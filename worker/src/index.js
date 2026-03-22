@@ -3,20 +3,20 @@
  * Uses D1 binding: env.DB
  */
 
-const ALLOWED_ORIGIN = "https://chief-prince-of-function.github.io";
-
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-  Vary: "Origin"
-};
+const ALLOWED_ORIGINS = new Set([
+  "https://chief-prince-of-function.github.io",
+  "https://fuscohub-api.michael-r-fusco.workers.dev",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173"
+]);
 
 export default {
   async fetch(request, env) {
+    const origin = request.headers.get("Origin");
+
     try {
       if (request.method === "OPTIONS") {
-        return corsResponse(204);
+        return corsResponse(origin, 204);
       }
 
       await initializeTables(env.DB);
@@ -24,29 +24,29 @@ export default {
       const url = new URL(request.url);
       const path = url.pathname;
 
-      if (path === "/api/tasks" && request.method === "GET") return json({ items: await listTasks(env.DB) });
-      if (path === "/api/tasks" && request.method === "POST") return json(await createTask(env.DB, request), 201);
-      if (path.match(/^\/api\/tasks\/\d+$/) && request.method === "PUT") return json(await updateTask(env.DB, idFromPath(path), request));
-      if (path.match(/^\/api\/tasks\/\d+$/) && request.method === "DELETE") return json(await deleteById(env.DB, "tasks", idFromPath(path)));
+      if (path === "/api/tasks" && request.method === "GET") return json(origin, { items: await listTasks(env.DB) });
+      if (path === "/api/tasks" && request.method === "POST") return json(origin, await createTask(env.DB, request), 201);
+      if (path.match(/^\/api\/tasks\/\d+$/) && request.method === "PUT") return json(origin, await updateTask(env.DB, idFromPath(path), request));
+      if (path.match(/^\/api\/tasks\/\d+$/) && request.method === "DELETE") return json(origin, await deleteById(env.DB, "tasks", idFromPath(path)));
 
-      if (path === "/api/notes" && request.method === "GET") return json({ items: await listNotes(env.DB) });
-      if (path === "/api/notes" && request.method === "POST") return json(await createNote(env.DB, request), 201);
-      if (path.match(/^\/api\/notes\/\d+$/) && request.method === "PUT") return json(await updateNote(env.DB, idFromPath(path), request));
-      if (path.match(/^\/api\/notes\/\d+$/) && request.method === "DELETE") return json(await deleteById(env.DB, "notes", idFromPath(path)));
+      if (path === "/api/notes" && request.method === "GET") return json(origin, { items: await listNotes(env.DB) });
+      if (path === "/api/notes" && request.method === "POST") return json(origin, await createNote(env.DB, request), 201);
+      if (path.match(/^\/api\/notes\/\d+$/) && request.method === "PUT") return json(origin, await updateNote(env.DB, idFromPath(path), request));
+      if (path.match(/^\/api\/notes\/\d+$/) && request.method === "DELETE") return json(origin, await deleteById(env.DB, "notes", idFromPath(path)));
 
-      if (path === "/api/meals" && request.method === "GET") return json({ items: await listMeals(env.DB) });
-      if (path === "/api/meals" && request.method === "POST") return json(await createMeal(env.DB, request), 201);
-      if (path.match(/^\/api\/meals\/\d+$/) && request.method === "PUT") return json(await updateMeal(env.DB, idFromPath(path), request));
-      if (path.match(/^\/api\/meals\/\d+$/) && request.method === "DELETE") return json(await deleteById(env.DB, "meals", idFromPath(path)));
+      if (path === "/api/meals" && request.method === "GET") return json(origin, { items: await listMeals(env.DB) });
+      if (path === "/api/meals" && request.method === "POST") return json(origin, await createMeal(env.DB, request), 201);
+      if (path.match(/^\/api\/meals\/\d+$/) && request.method === "PUT") return json(origin, await updateMeal(env.DB, idFromPath(path), request));
+      if (path.match(/^\/api\/meals\/\d+$/) && request.method === "DELETE") return json(origin, await deleteById(env.DB, "meals", idFromPath(path)));
 
-      if (path === "/api/links" && request.method === "GET") return json({ items: await listLinks(env.DB) });
-      if (path === "/api/links" && request.method === "POST") return json(await createLink(env.DB, request), 201);
-      if (path.match(/^\/api\/links\/\d+$/) && request.method === "PUT") return json(await updateLink(env.DB, idFromPath(path), request));
-      if (path.match(/^\/api\/links\/\d+$/) && request.method === "DELETE") return json(await deleteById(env.DB, "links", idFromPath(path)));
+      if (path === "/api/links" && request.method === "GET") return json(origin, { items: await listLinks(env.DB) });
+      if (path === "/api/links" && request.method === "POST") return json(origin, await createLink(env.DB, request), 201);
+      if (path.match(/^\/api\/links\/\d+$/) && request.method === "PUT") return json(origin, await updateLink(env.DB, idFromPath(path), request));
+      if (path.match(/^\/api\/links\/\d+$/) && request.method === "DELETE") return json(origin, await deleteById(env.DB, "links", idFromPath(path)));
 
-      return json({ error: "Not found" }, 404);
+      return json(origin, { error: "Not found" }, 404);
     } catch (error) {
-      return json({ error: error.message || "Server error" }, 500);
+      return json(origin, { error: error.message || "Server error" }, 500);
     }
   }
 };
@@ -55,19 +55,26 @@ function idFromPath(path) {
   return Number(path.split("/").pop());
 }
 
-function corsHeaders(extraHeaders = {}) {
-  return { ...CORS_HEADERS, ...extraHeaders };
+function corsHeaders(origin, extraHeaders = {}) {
+  const allowOrigin = origin && ALLOWED_ORIGINS.has(origin) ? origin : "*";
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    Vary: "Origin",
+    ...extraHeaders
+  };
 }
 
-function json(body, status = 200) {
+function json(origin, body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: corsHeaders({ "Content-Type": "application/json" })
+    headers: corsHeaders(origin, { "Content-Type": "application/json" })
   });
 }
 
-function corsResponse(status = 204) {
-  return new Response(null, { status, headers: corsHeaders() });
+function corsResponse(origin, status = 204) {
+  return new Response(null, { status, headers: corsHeaders(origin) });
 }
 
 let initialized = false;

@@ -46,3 +46,17 @@ Includes JSON responses, basic validation, CORS headers, OPTIONS preflight handl
 - No auth/passcodes/accounts are included by design.
 - Shared data source of truth is D1 via Worker APIs (not localStorage).
 - Sync model is simple **manual refresh-to-sync** for v1.
+
+
+## Deploying the Cloudflare Worker
+
+The API Worker source is in `worker/src/index.js`, and deployment is configured by `worker/wrangler.toml` with Worker name `fuscohub-api`.
+
+1. Set the real D1 database UUID in `worker/wrangler.toml` (`database_id`).
+2. Authenticate with Cloudflare:
+   - `npx wrangler login`
+3. Deploy this Worker entrypoint to the existing Worker name:
+   - `npx wrangler deploy --config worker/wrangler.toml`
+
+After deploy, verify:
+- `curl https://fuscohub-api.michael-r-fusco.workers.dev/api/tasks` returns JSON.
