@@ -23,17 +23,81 @@ function setSyncStatus(msg){
   el.syncStatus.textContent = msg;
 }
 
+function showErrorMessage(form, message){
+  let messageNode = form.querySelector(".formMessage");
+  if (!messageNode) {
+    messageNode = document.createElement("div");
+    messageNode.className = "formMessage";
+    form.appendChild(messageNode);
+  }
+  messageNode.textContent = message;
+  messageNode.classList.add("error");
+}
+
+function clearFormMessage(form){
+  const messageNode = form.querySelector(".formMessage");
+  if (!messageNode) return;
+  messageNode.textContent = "";
+  messageNode.classList.remove("error");
+}
+
+function getFormButton(form){
+  return form.querySelector('button[type="submit"]');
+}
+
+function setSaveButtonState(form, stateName){
+  const button = getFormButton(form);
+  if (!button) return;
+  if (!button.dataset.defaultText) {
+    button.dataset.defaultText = button.textContent;
+  }
+
+  if (stateName === "saving") {
+    button.disabled = true;
+    button.textContent = "Saving...";
+    return;
+  }
+
+  if (stateName === "saved") {
+    button.disabled = true;
+    button.textContent = "Saved ✓";
+    setTimeout(() => {
+      button.disabled = false;
+      button.textContent = button.dataset.defaultText;
+      updateSaveButtonsDisabledState();
+    }, 1000);
+    return;
+  }
+
+  button.disabled = false;
+  button.textContent = button.dataset.defaultText;
+}
+
+function updateSaveButtonsDisabledState(){
+  const taskButton = getFormButton(el.taskForm);
+  const noteButton = getFormButton(el.noteForm);
+  const mealButton = getFormButton(el.mealForm);
+  const linkButton = getFormButton(el.linkForm);
+
+  if (taskButton) {
+    taskButton.disabled = !el.taskTitle.value.trim();
+  }
+  if (noteButton) {
+    noteButton.disabled = !el.noteContent.value.trim();
+  }
+  if (mealButton) {
+    mealButton.disabled = !(el.mealDay.value.trim() && el.mealName.value.trim());
+  }
+  if (linkButton) {
+    linkButton.disabled = !(el.linkTitle.value.trim() && el.linkUrl.value.trim());
+  }
+}
+
 async function api(path, options = {}){
   const method = (options.method || "GET").toUpperCase();
   const headers = { ...(options.headers || {}) };
-  const logLabel = options.logLabel || `${method} ${path}`;
-  const shouldLog = Boolean(options.logLabel);
   if ((method === "POST" || method === "PUT") && options.body && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
-  }
-
-  if (shouldLog) {
-    console.log(`[save:${logLabel}] before request`, { path, method, body: options.body || null });
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -42,17 +106,7 @@ async function api(path, options = {}){
     headers
   });
 
-  if (shouldLog) {
-    console.log(`[save:${logLabel}] response status`, response.status);
-  }
-
   const data = await response.json().catch(() => ({}));
-  if (method === "GET" && path === "/api/tasks") {
-    console.log("[debug] GET /api/tasks parsed JSON", data);
-  }
-  if (shouldLog) {
-    console.log(`[save:${logLabel}] parsed response JSON`, data);
-  }
   if(!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
   return data;
 }
@@ -107,10 +161,9 @@ function actionButtons(actions){
 }
 
 function renderTasks(){
-  console.log("[debug] state.tasks before renderTasks()", state.tasks);
-  const list = [...state.tasks].sort((a, b) => (a.completed - b.completed) || (b.updated_at - a.updated_at));
+  const source = Array.isArray(state.tasks) ? state.tasks : [];
+  const list = [...source].sort((a, b) => (a.completed - b.completed) || (b.updated_at - a.updated_at));
   const filtered = state.hideCompleted ? list.filter((task) => !task.completed) : list;
-  console.log("[debug] renderTasks item count", filtered.length);
   el.tasksList.replaceChildren();
   if(!filtered.length){
     el.tasksList.appendChild(emptyState("No tasks yet. Add one above."));
@@ -139,7 +192,8 @@ function renderTasks(){
 }
 
 function renderNotes(){
-  const list = [...state.notes].sort((a, b) => (b.pinned - a.pinned) || (b.updated_at - a.updated_at));
+  const source = Array.isArray(state.notes) ? state.notes : [];
+  const list = [...source].sort((a, b) => (b.pinned - a.pinned) || (b.updated_at - a.updated_at));
   el.notesList.replaceChildren();
   if(!list.length) return el.notesList.appendChild(emptyState("No notes yet. Add one above."));
   list.forEach((note) => {
@@ -164,7 +218,8 @@ function renderNotes(){
 
 function renderMeals(){
   const orderedDays = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
-  const list = [...state.meals].sort((a,b)=> orderedDays.indexOf(a.day)-orderedDays.indexOf(b.day) || (b.updated_at-a.updated_at));
+  const source = Array.isArray(state.meals) ? state.meals : [];
+  const list = [...source].sort((a,b)=> orderedDays.indexOf(a.day)-orderedDays.indexOf(b.day) || (b.updated_at-a.updated_at));
   el.mealsList.replaceChildren();
   if(!list.length) return el.mealsList.appendChild(emptyState("No meals planned yet."));
   list.forEach((meal) => {
@@ -184,7 +239,8 @@ function renderMeals(){
 }
 
 function renderLinks(){
-  const list = [...state.links].sort((a,b)=> b.created_at-a.created_at);
+  const source = Array.isArray(state.links) ? state.links : [];
+  const list = [...source].sort((a,b)=> b.created_at-a.created_at);
   el.linksList.replaceChildren();
   if(!list.length) return el.linksList.appendChild(emptyState("No quick links yet."));
   list.forEach((link) => {
@@ -192,13 +248,25 @@ function renderLinks(){
     card.className = "linkCard";
     const main = document.createElement("div");
     main.className = "linkMain";
-    main.innerHTML = `<span>${link.icon || "🔗"}</span>`;
+    main.innerHTML = `<span class="linkIcon">${link.icon || "🔗"}</span>`;
     const a = document.createElement("a");
     a.href = link.url;
     a.target = "_blank";
     a.rel = "noopener noreferrer";
     a.textContent = link.title;
     main.appendChild(a);
+    card.setAttribute("role", "link");
+    card.tabIndex = 0;
+    card.addEventListener("click", (event) => {
+      if (event.target.closest(".itemActions")) return;
+      window.open(link.url, "_blank", "noopener,noreferrer");
+    });
+    card.addEventListener("keydown", (event) => {
+      if ((event.key === "Enter" || event.key === " ") && !event.target.closest(".itemActions")) {
+        event.preventDefault();
+        window.open(link.url, "_blank", "noopener,noreferrer");
+      }
+    });
 
     card.append(main, actionButtons([
       { label: "Edit", onClick: () => editLink(link) },
@@ -220,13 +288,13 @@ function metaRow(updatedAt, createdAt){
 
 function renderAll(){ renderTasks(); renderNotes(); renderMeals(); renderLinks(); }
 
-async function createTask(payload){ await api("/api/tasks", { method: "POST", body: JSON.stringify(payload), logLabel: "tasks:create" }); await refreshAll(); }
+async function createTask(payload){ await api("/api/tasks", { method: "POST", body: JSON.stringify(payload) }); await refreshAll(); }
 async function updateTask(id, payload){ await api(`/api/tasks/${id}`, { method: "PUT", body: JSON.stringify(payload) }); await refreshAll(); }
-async function createNote(payload){ await api("/api/notes", { method: "POST", body: JSON.stringify(payload), logLabel: "notes:create" }); await refreshAll(); }
+async function createNote(payload){ await api("/api/notes", { method: "POST", body: JSON.stringify(payload) }); await refreshAll(); }
 async function updateNote(id, payload){ await api(`/api/notes/${id}`, { method: "PUT", body: JSON.stringify(payload) }); await refreshAll(); }
-async function createMeal(payload){ await api("/api/meals", { method: "POST", body: JSON.stringify(payload), logLabel: "meals:create" }); await refreshAll(); }
+async function createMeal(payload){ await api("/api/meals", { method: "POST", body: JSON.stringify(payload) }); await refreshAll(); }
 async function updateMeal(id, payload){ await api(`/api/meals/${id}`, { method: "PUT", body: JSON.stringify(payload) }); await refreshAll(); }
-async function createLink(payload){ await api("/api/links", { method: "POST", body: JSON.stringify(payload), logLabel: "links:create" }); await refreshAll(); }
+async function createLink(payload){ await api("/api/links", { method: "POST", body: JSON.stringify(payload) }); await refreshAll(); }
 async function updateLink(id, payload){ await api(`/api/links/${id}`, { method: "PUT", body: JSON.stringify(payload) }); await refreshAll(); }
 
 async function removeItem(type, id){
@@ -263,64 +331,106 @@ function editLink(link){
 function bindEvents(){
   el.refreshBtn.addEventListener("click", refreshAll);
   el.hideCompleted.addEventListener("change", (e) => { state.hideCompleted = e.target.checked; renderTasks(); });
+  el.taskTitle.addEventListener("input", updateSaveButtonsDisabledState);
+  el.noteContent.addEventListener("input", updateSaveButtonsDisabledState);
+  el.mealDay.addEventListener("change", updateSaveButtonsDisabledState);
+  el.mealName.addEventListener("input", updateSaveButtonsDisabledState);
+  el.linkTitle.addEventListener("input", updateSaveButtonsDisabledState);
+  el.linkUrl.addEventListener("input", updateSaveButtonsDisabledState);
+
+  el.taskTitle.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      el.taskForm.requestSubmit();
+    }
+  });
+
+  el.noteContent.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      el.noteForm.requestSubmit();
+    }
+  });
 
   el.taskForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    clearFormMessage(el.taskForm);
     const title = el.taskTitle.value.trim();
     if(!title) return;
     try {
+      setSaveButtonState(el.taskForm, "saving");
       await createTask({ title, assignee: el.taskAssignee.value.trim() || null });
       el.taskForm.reset();
+      setSaveButtonState(el.taskForm, "saved");
+      updateSaveButtonsDisabledState();
     } catch (error) {
       console.error("Task save failed", error);
       setSyncStatus(`Task not saved: ${error.message}`);
-      alert(`Could not save task: ${error.message}`);
+      showErrorMessage(el.taskForm, "Error saving");
+      setSaveButtonState(el.taskForm, "default");
     }
   });
 
   el.noteForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    clearFormMessage(el.noteForm);
     const content = el.noteContent.value.trim();
     if(!content) return;
     try {
+      setSaveButtonState(el.noteForm, "saving");
       await createNote({ content });
       el.noteForm.reset();
+      setSaveButtonState(el.noteForm, "saved");
+      updateSaveButtonsDisabledState();
     } catch (error) {
       console.error("Note save failed", error);
       setSyncStatus(`Note not saved: ${error.message}`);
-      alert(`Could not save note: ${error.message}`);
+      showErrorMessage(el.noteForm, "Error saving");
+      setSaveButtonState(el.noteForm, "default");
     }
   });
 
   el.mealForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    clearFormMessage(el.mealForm);
     const day = el.mealDay.value.trim();
     const meal = el.mealName.value.trim();
     if(!day || !meal) return;
     try {
+      setSaveButtonState(el.mealForm, "saving");
       await createMeal({ day, meal, notes: el.mealNotes.value.trim() || null });
       el.mealForm.reset();
+      setSaveButtonState(el.mealForm, "saved");
+      updateSaveButtonsDisabledState();
     } catch (error) {
       console.error("Meal save failed", error);
       setSyncStatus(`Meal not saved: ${error.message}`);
-      alert(`Could not save meal: ${error.message}`);
+      showErrorMessage(el.mealForm, "Error saving");
+      setSaveButtonState(el.mealForm, "default");
     }
   });
 
   el.linkForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    clearFormMessage(el.linkForm);
     const title = el.linkTitle.value.trim();
     const url = el.linkUrl.value.trim();
     if(!title || !url) return;
     try {
+      setSaveButtonState(el.linkForm, "saving");
       await createLink({ title, url, icon: el.linkIcon.value.trim() || null });
       el.linkForm.reset();
+      setSaveButtonState(el.linkForm, "saved");
+      updateSaveButtonsDisabledState();
     } catch (error) {
       console.error("Link save failed", error);
       setSyncStatus(`Link not saved: ${error.message}`);
-      alert(`Could not save link: ${error.message}`);
+      showErrorMessage(el.linkForm, "Error saving");
+      setSaveButtonState(el.linkForm, "default");
     }
   });
+
+  updateSaveButtonsDisabledState();
 }
 
 setTodayHeader();
