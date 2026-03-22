@@ -24,13 +24,30 @@ function setSyncStatus(msg){
 }
 
 async function api(path, options = {}){
+  const method = (options.method || "GET").toUpperCase();
+  const headers = { ...(options.headers || {}) };
+  if ((method === "POST" || method === "PUT") && options.body && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) }
+    method,
+    headers
   });
   const data = await response.json().catch(() => ({}));
   if(!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
   return data;
+}
+
+async function unregisterLegacyServiceWorkers(){
+  if(!("serviceWorker" in navigator)) return;
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((registration) => registration.unregister()));
+  } catch (error) {
+    console.warn("Unable to unregister legacy service workers", error);
+  }
 }
 
 async function refreshAll(){
@@ -265,4 +282,5 @@ function bindEvents(){
 
 setTodayHeader();
 bindEvents();
+unregisterLegacyServiceWorkers();
 refreshAll();
