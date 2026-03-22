@@ -3,133 +3,82 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b1020" />
+  <meta name="theme-color" content="#f6f1e9" />
   <title>Fusco Family Hub</title>
-
-  <!-- PWA -->
   <link rel="manifest" href="manifest.webmanifest" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-
-  <!-- Icons -->
   <link rel="icon" href="assets/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" href="assets/favicon-32.png" />
   <link rel="apple-touch-icon" href="assets/icon-192.png" />
-
   <link rel="stylesheet" href="app.css" />
 </head>
-
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <img class="brandIcon" src="assets/icon-192.png" alt="" />
-      <div class="brandText">
-        <div class="brandTitle">Fusco Family Hub</div>
-        <div class="brandSub" id="status">Loading…</div>
+  <main class="container">
+    <header class="hero card">
+      <div>
+        <p class="eyebrow">Shared family board</p>
+        <h1>Fusco Family Hub</h1>
+        <p class="today" id="todayLine">Loading today…</p>
       </div>
-    </div>
-
-    <div class="actions">
-      <button class="btn" id="saveBtn" type="button">Save to Cloud</button>
-      <button class="btn ghost" id="refreshBtn" type="button">Refresh</button>
-    </div>
-  </header>
-
-  <main class="wrap">
-    <section class="statusBar" aria-label="Family Status Bar">
-      <div class="statusInfo">
-        <div class="statusTitle">Fusco Family Hub</div>
-        <div class="statusDate" id="statusDate">Today is —</div>
+      <div class="heroActions">
+        <p class="syncText" id="syncStatus">Ready to sync.</p>
+        <button id="refreshBtn" class="btn" type="button">Refresh</button>
       </div>
-      <div class="statusChips">
-        <div class="statusChip" id="tasksChip">✅ 0 tasks left</div>
-        <div class="statusChip" id="eventsChip">📅 0 events today</div>
-        <div class="statusChip" id="nextChip">⏱ Next up: —</div>
-        <div class="statusChip weatherChip">
-          <span class="weatherValue" id="weatherValue">🌤 --°</span>
-          <form class="weatherForm" id="weatherForm">
-            <label class="srOnly" for="weatherZip">Zip</label>
-            <input id="weatherZip" class="textInput weatherInput" type="text" inputmode="numeric" placeholder="Zip" maxlength="10" />
-            <button class="btn small ghost" type="submit">Go</button>
-          </form>
+    </header>
+
+    <section class="layout">
+      <article class="card section" id="tasksSection">
+        <div class="sectionHead">
+          <h2>Tasks</h2>
+          <label class="toggle"><input type="checkbox" id="hideCompleted" /> Hide completed</label>
         </div>
-      </div>
-    </section>
-    <section class="grid">
-      <article class="card">
-        <h2 class="cardTitle">Notes</h2>
-        <div class="cardBody notesCard">
-          <label class="inputLabel" for="notesInput">Quick notes</label>
-          <textarea id="notesInput" class="textInput notesInput" rows="8" placeholder="Jot down simple notes for the family..."></textarea>
-          <div class="muted notesMeta" id="notesMeta">Saved locally on this device.</div>
-        </div>
+        <form id="taskForm" class="inlineForm">
+          <input id="taskTitle" type="text" placeholder="Add a task" required maxlength="140" />
+          <input id="taskAssignee" type="text" placeholder="Assignee (optional)" maxlength="60" />
+          <button class="btn" type="submit">Save</button>
+        </form>
+        <div id="tasksList" class="stack"></div>
       </article>
 
-      <article class="card">
-        <h2 class="cardTitle">To Do</h2>
-        <div class="cardBody">
-          <form class="todoForm" id="todoForm">
-            <label class="inputLabel" for="todoInput">Add a task</label>
-            <div class="todoInputRow">
-              <input id="todoInput" class="textInput" type="text" placeholder="Add a new task" autocomplete="off" />
-              <button class="btn" type="submit">Add</button>
-            </div>
-          </form>
-          <div class="muted" id="todoEmpty">No tasks yet. Add your first one above.</div>
-          <div class="todoList" id="todoList" aria-live="polite"></div>
-        </div>
+      <article class="card section" id="notesSection">
+        <div class="sectionHead"><h2>Notes</h2></div>
+        <form id="noteForm" class="inlineForm">
+          <textarea id="noteContent" rows="2" placeholder="Add a shared note" required></textarea>
+          <button class="btn" type="submit">Save</button>
+        </form>
+        <div id="notesList" class="stack"></div>
       </article>
 
-      <article class="card">
-        <h2 class="cardTitle">Dinner + Groceries</h2>
-        <div class="cardBody plannerCard">
-          <section class="plannerSection">
-            <form class="plannerForm" id="dinnerForm">
-              <label class="inputLabel" for="dinnerInput">Dinner ideas</label>
-              <div class="plannerInputRow">
-                <input id="dinnerInput" class="textInput" type="text" placeholder="Add a dinner idea" autocomplete="off" />
-                <button class="btn" type="submit">Add</button>
-              </div>
-            </form>
-            <div class="muted" id="dinnerEmpty">No dinner ideas yet.</div>
-            <div class="plannerList" id="dinnerList" aria-live="polite"></div>
-          </section>
-
-          <section class="plannerSection">
-            <form class="plannerForm" id="groceryForm">
-              <label class="inputLabel" for="groceryInput">Groceries</label>
-              <div class="plannerInputRow">
-                <input id="groceryInput" class="textInput" type="text" placeholder="Add a grocery item" autocomplete="off" />
-                <button class="btn" type="submit">Add</button>
-              </div>
-            </form>
-            <div class="muted" id="groceryEmpty">No groceries yet.</div>
-            <div class="plannerList" id="groceryList" aria-live="polite"></div>
-          </section>
-        </div>
+      <article class="card section" id="mealsSection">
+        <div class="sectionHead"><h2>Meals</h2></div>
+        <form id="mealForm" class="inlineForm">
+          <select id="mealDay" required>
+            <option value="">Day</option>
+            <option>Monday</option><option>Tuesday</option><option>Wednesday</option>
+            <option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option>
+          </select>
+          <input id="mealName" type="text" placeholder="Meal" required maxlength="120" />
+          <input id="mealNotes" type="text" placeholder="Notes (optional)" maxlength="200" />
+          <button class="btn" type="submit">Save</button>
+        </form>
+        <div id="mealsList" class="stack"></div>
       </article>
 
-      <article class="card">
-        <h2 class="cardTitle">Calendar</h2>
-        <div class="cardBody">
-          <div class="calendarList" id="calendarList"></div>
-          <div class="muted calendarStatus" id="calendarStatus">Loading calendar…</div>
-        </div>
+      <article class="card section" id="linksSection">
+        <div class="sectionHead"><h2>Quick Links</h2></div>
+        <form id="linkForm" class="inlineForm">
+          <input id="linkTitle" type="text" placeholder="Title" required maxlength="80" />
+          <input id="linkUrl" type="url" placeholder="https://" required maxlength="300" />
+          <input id="linkIcon" type="text" placeholder="Emoji" maxlength="6" />
+          <button class="btn" type="submit">Save</button>
+        </form>
+        <div id="linksList" class="linksGrid"></div>
       </article>
-
-      <article class="card">
-        <h2 class="cardTitle">Today</h2>
-        <div class="cardBody" id="todayBlock">
-          <div class="muted">No data yet.</div>
-        </div>
-      </article>
-
     </section>
   </main>
 
-  <footer class="footer">
-    <div class="muted" id="footerMeta">—</div>
-  </footer>
+  <template id="emptyStateTemplate">
+    <div class="empty">Nothing here yet.</div>
+  </template>
 
   <script src="app.js"></script>
 </body>
