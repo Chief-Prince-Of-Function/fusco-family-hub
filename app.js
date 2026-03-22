@@ -1,1005 +1,268 @@
-const statusEl = document.getElementById("status");
-const footerMeta = document.getElementById("footerMeta");
+// Frontend API config: change this single value when moving to a custom backend domain.
+const API_BASE_URL = "https://fuscohub-api.michael-r-fusco.workers.dev";
 
-const todayBlock = document.getElementById("todayBlock");
-const notesInput = document.getElementById("notesInput");
-const notesMeta = document.getElementById("notesMeta");
+const state = { tasks: [], notes: [], meals: [], links: [], hideCompleted: false, lastSynced: null };
 
-const statusDate = document.getElementById("statusDate");
-const tasksChip = document.getElementById("tasksChip");
-const eventsChip = document.getElementById("eventsChip");
-const nextChip = document.getElementById("nextChip");
-const weatherValue = document.getElementById("weatherValue");
-const weatherForm = document.getElementById("weatherForm");
-const weatherZip = document.getElementById("weatherZip");
+const $ = (id) => document.getElementById(id);
+const el = {
+  todayLine: $("todayLine"), syncStatus: $("syncStatus"), refreshBtn: $("refreshBtn"),
+  taskForm: $("taskForm"), taskTitle: $("taskTitle"), taskAssignee: $("taskAssignee"), tasksList: $("tasksList"), hideCompleted: $("hideCompleted"),
+  noteForm: $("noteForm"), noteContent: $("noteContent"), notesList: $("notesList"),
+  mealForm: $("mealForm"), mealDay: $("mealDay"), mealName: $("mealName"), mealNotes: $("mealNotes"), mealsList: $("mealsList"),
+  linkForm: $("linkForm"), linkTitle: $("linkTitle"), linkUrl: $("linkUrl"), linkIcon: $("linkIcon"), linksList: $("linksList")
+};
 
-const todoForm = document.getElementById("todoForm");
-const todoInput = document.getElementById("todoInput");
-const todoList = document.getElementById("todoList");
-const todoEmpty = document.getElementById("todoEmpty");
-
-const dinnerForm = document.getElementById("dinnerForm");
-const dinnerInput = document.getElementById("dinnerInput");
-const dinnerList = document.getElementById("dinnerList");
-const dinnerEmpty = document.getElementById("dinnerEmpty");
-
-const groceryForm = document.getElementById("groceryForm");
-const groceryInput = document.getElementById("groceryInput");
-const groceryList = document.getElementById("groceryList");
-const groceryEmpty = document.getElementById("groceryEmpty");
-
-const calendarList = document.getElementById("calendarList");
-const calendarStatus = document.getElementById("calendarStatus");
-
-const refreshBtn = document.getElementById("refreshBtn");
-const saveBtn = document.getElementById("saveBtn");
-
-const NOTES_KEY = "familyHubNotes";
-const TODOS_KEY = "familyHubTodos";
-const DINNER_IDEAS_KEY = "familyHubDinnerIdeas";
-const GROCERY_LIST_KEY = "familyHubGroceries";
-const WEATHER_ZIP_KEY = "familyHubWeatherZip";
-const CALENDAR_FEED_URL = "https://p118-caldav.icloud.com/published/2/MTAwOTc2MzMxMzEwMDk3NkfBTEalW_8j08aH5ptAb17hc-m1j1maxyi1OQ-k6lyqZrcyzkVqsiLDgydJKgbIX1GMSAVGljZh20EcuHB_law";
-const CALENDAR_FETCH_STRATEGIES = [
-  { label: "allorigins", build: (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}` },
-  { label: "jina-ai-https", build: (url) => `https://r.jina.ai/https://${url.replace(/^https?:\/\//, "")}` },
-  { label: "jina-ai-http", build: (url) => `https://r.jina.ai/http://${url.replace(/^https?:\/\//, "")}` },
-  { label: "cors-isomorphic", build: (url) => `https://cors.isomorphic-git.org/${url}` },
-  { label: "direct", build: (url) => url }
-];
-const GITHUB_TOKEN_KEY = "FFH_GITHUB_TOKEN";
-const CALENDAR_CACHE_KEY = "familyHubCalendarCache";
-const CALENDAR_CACHE_TTL_MS = 1000 * 60 * 60 * 6;
-
-let hubData = null;
-let isSaving = false;
-let calendarEvents = [];
-
-function setStatus(msg){
-  if(statusEl) statusEl.textContent = msg;
-}
-
-function esc(s){
-  return String(s ?? "")
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'","&#039;");
-}
-
-function pluralize(count, singular, plural = `${singular}s`){
-  return count === 1 ? singular : plural;
-}
-
-function updateStatusDate(){
-  if(!statusDate) return;
+function setTodayHeader(){
   const now = new Date();
-  const weekday = new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(now);
-  const monthDay = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(now);
-  statusDate.textContent = `Today is ${weekday} • ${monthDay}`;
+  const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening";
+  const dateLine = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(now);
+  el.todayLine.textContent = `${greeting} • ${dateLine}`;
 }
 
-function updateTaskChip(){
-  if(!tasksChip) return;
-  const count = todos.length;
-  tasksChip.textContent = `✅ ${count} ${pluralize(count, "task")} left`;
+function setSyncStatus(msg){
+  el.syncStatus.textContent = msg;
 }
 
-function isSameDay(dateA, dateB){
-  return dateA.getFullYear() === dateB.getFullYear()
-    && dateA.getMonth() === dateB.getMonth()
-    && dateA.getDate() === dateB.getDate();
+async function api(path, options = {}){
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) }
+  });
+  const data = await response.json().catch(() => ({}));
+  if(!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
+  return data;
 }
 
-function endOfDay(date){
-  const end = new Date(date);
-  end.setHours(23, 59, 59, 999);
-  return end;
-}
-
-function getEventEnd(event){
-  if(event.end instanceof Date && !Number.isNaN(event.end)) return event.end;
-  if(event.allDay && event.start instanceof Date) return endOfDay(event.start);
-  if(event.start instanceof Date) return new Date(event.start.getTime() + 60 * 60 * 1000);
-  return null;
-}
-
-function getEventSortStart(event, now){
-  if(!(event.start instanceof Date)) return null;
-  if(event.allDay && isSameDay(event.start, now) && event.start < now){
-    return endOfDay(event.start);
-  }
-  return event.start;
-}
-
-function buildNextEventLabel(event){
-  const summary = event.summary || "Untitled event";
-  if(event.allDay){
-    return `${summary} (All day)`;
-  }
-  const timeFormatter = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
-  const timeLabel = timeFormatter.format(event.start);
-  return `${summary} @ ${timeLabel}`;
-}
-
-function updateCalendarChips(events){
-  if(!eventsChip && !nextChip) return;
-  const now = new Date();
-  const todayEvents = events.filter(event => event.start instanceof Date && isSameDay(event.start, now));
-  if(eventsChip){
-    const count = todayEvents.length;
-    eventsChip.textContent = `📅 ${count} ${pluralize(count, "event")} today`;
-  }
-  if(nextChip){
-    const sorted = [...events]
-      .filter(event => event.start instanceof Date)
-      .sort((a, b) => {
-        const startA = getEventSortStart(a, now);
-        const startB = getEventSortStart(b, now);
-        if(!startA || !startB) return 0;
-        return startA - startB;
-      });
-    const next = sorted.find(event => {
-      const sortStart = getEventSortStart(event, now);
-      return sortStart && sortStart >= now;
-    });
-    nextChip.textContent = next ? `⏱ Next up: ${buildNextEventLabel(next)}` : "⏱ Next up: —";
+async function refreshAll(){
+  setSyncStatus("Syncing…");
+  try {
+    const [tasks, notes, meals, links] = await Promise.all([
+      api("/api/tasks"), api("/api/notes"), api("/api/meals"), api("/api/links")
+    ]);
+    state.tasks = tasks.items || [];
+    state.notes = notes.items || [];
+    state.meals = meals.items || [];
+    state.links = links.items || [];
+    state.lastSynced = new Date();
+    renderAll();
+    setSyncStatus(`Last synced ${state.lastSynced.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`);
+  } catch (error) {
+    console.error(error);
+    setSyncStatus("Could not sync right now. Try refresh again.");
   }
 }
 
-function weatherCodeToIcon(code){
-  if(code === 0) return "☀️";
-  if([1, 2].includes(code)) return "🌤";
-  if(code === 3) return "☁️";
-  if([45, 48].includes(code)) return "🌫";
-  if([51, 53, 55, 56, 57].includes(code)) return "🌦";
-  if([61, 63, 65, 66, 67].includes(code)) return "🌧";
-  if([71, 73, 75, 77].includes(code)) return "❄️";
-  if([80, 81, 82].includes(code)) return "🌧";
-  if([85, 86].includes(code)) return "❄️";
-  if([95, 96, 99].includes(code)) return "⛈";
-  return "🌡️";
+function emptyState(message = "Nothing here yet."){
+  const node = document.getElementById("emptyStateTemplate").content.firstElementChild.cloneNode(true);
+  node.textContent = message;
+  return node;
 }
 
-function setWeatherStatus(text){
-  if(weatherValue) weatherValue.textContent = text;
-}
-
-async function fetchWeatherForZip(zip){
-  if(!zip) return;
-  setWeatherStatus("⏳ Loading…");
-  try{
-    const geoRes = await fetch(
-      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(zip)}&count=1&language=en&format=json`
-    );
-    if(!geoRes.ok) throw new Error("Geocode failed");
-    const geoData = await geoRes.json();
-    const place = geoData?.results?.[0];
-    if(!place) throw new Error("Location not found");
-    const { latitude, longitude } = place;
-    const weatherRes = await fetch(
-      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&temperature_unit=fahrenheit`
-    );
-    if(!weatherRes.ok) throw new Error("Weather fetch failed");
-    const weatherData = await weatherRes.json();
-    const temp = Number(weatherData?.current?.temperature_2m);
-    const code = Number(weatherData?.current?.weather_code);
-    const icon = weatherCodeToIcon(code);
-    const tempLabel = Number.isFinite(temp) ? `${Math.round(temp)}°` : "--°";
-    setWeatherStatus(`${icon} ${tempLabel}`);
-  }catch(err){
-    console.error(err);
-    setWeatherStatus("⚠️ Weather unavailable");
-  }
-}
-
-async function loadHubJSON(){
-  // cache: no-store ensures you actually pull updates from GitHub Pages
-  const res = await fetch("./data/hub.json", { cache: "no-store" });
-  if(!res.ok) throw new Error(`hub.json fetch failed (${res.status})`);
-  return await res.json();
-}
-
-function renderToday(data){
-  const t = data?.today || {};
-  const headline = t.headline || "No headline set";
-  const focus = Array.isArray(t.focus) ? t.focus : [];
-
-  const focusHtml = focus.length
-    ? `<div class="list">${focus.map(item => `
-        <div class="row">
-          <div>${esc(item)}</div>
-        </div>
-      `).join("")}</div>`
-    : `<div class="muted">No focus items yet.</div>`;
-
-  todayBlock.innerHTML = `
-    <div style="font-weight:800; margin-bottom:10px;">${esc(headline)}</div>
-    ${focusHtml}
-  `;
-}
-
-function setNotesMeta(message){
-  if(notesMeta) notesMeta.textContent = message;
-}
-
-function hydrateNotesFromCloud(data){
-  if(!notesInput) return;
-  const saved = localStorage.getItem(NOTES_KEY);
-  if(saved && saved.trim().length) return;
-  const cloudNotes = data?.notes;
-  if(typeof cloudNotes === "string"){
-    notesInput.value = cloudNotes;
-    localStorage.setItem(NOTES_KEY, cloudNotes);
-    setNotesMeta("Loaded notes from cloud data.");
-  }
-}
-
-function loadNotes(){
-  if(!notesInput) return;
-  const saved = localStorage.getItem(NOTES_KEY) || "";
-  notesInput.value = saved;
-}
-
-function saveNotes(){
-  if(!notesInput) return;
-  localStorage.setItem(NOTES_KEY, notesInput.value);
-  const timestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  setNotesMeta(`Saved locally at ${timestamp}.`);
-}
-
-let todos = [];
-let dinnerIdeas = [];
-let groceryItems = [];
-
-function saveTodos(){
-  localStorage.setItem(TODOS_KEY, JSON.stringify(todos));
-}
-
-function loadTodos(){
-  try{
-    const stored = JSON.parse(localStorage.getItem(TODOS_KEY) || "[]");
-    todos = Array.isArray(stored) ? stored : [];
-  }catch{
-    todos = [];
-  }
-}
-
-function loadPlannerLists(){
-  dinnerIdeas = loadPlannerList(DINNER_IDEAS_KEY);
-  groceryItems = loadPlannerList(GROCERY_LIST_KEY);
-}
-
-function hydrateTodosFromCloud(data){
-  try{
-    const stored = JSON.parse(localStorage.getItem(TODOS_KEY) || "[]");
-    if(Array.isArray(stored) && stored.length){
-      todos = stored;
-      return;
-    }
-  }catch{
-    // ignore storage parse errors
-  }
-  const cloudTodos = Array.isArray(data?.todos) ? data.todos : [];
-  if(!cloudTodos.length) return;
-  todos = cloudTodos.map(item => ({
-    id: item.id || crypto.randomUUID(),
-    text: item.text || ""
-  }));
-  saveTodos();
-}
-
-function hydrateDinnerIdeasFromCloud(data){
-  dinnerIdeas = hydratePlannerListFromCloud(DINNER_IDEAS_KEY, data?.dinnerIdeas);
-}
-
-function hydrateGroceryItemsFromCloud(data){
-  groceryItems = hydratePlannerListFromCloud(GROCERY_LIST_KEY, data?.groceries);
-}
-
-function createTodoElement(todo){
-  const row = document.createElement("div");
-  row.className = "todoItem";
-  row.draggable = true;
-  row.dataset.id = todo.id;
-
-  const dragHandle = document.createElement("div");
-  dragHandle.className = "todoDrag";
-  dragHandle.textContent = "⋮⋮";
-
-  const input = document.createElement("input");
-  input.type = "text";
-  input.className = "todoText";
-  input.value = todo.text;
-  input.addEventListener("change", () => {
-    const next = input.value.trim();
-    todo.text = next;
-    input.value = next;
-    saveTodos();
+function actionButtons(actions){
+  const wrap = document.createElement("div");
+  wrap.className = "itemActions";
+  actions.forEach(({ label, onClick }) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "smallBtn";
+    button.textContent = label;
+    button.addEventListener("click", onClick);
+    wrap.appendChild(button);
   });
-  input.addEventListener("blur", () => {
-    const next = input.value.trim();
-    todo.text = next;
-    input.value = next;
-    saveTodos();
-  });
-
-  const actions = document.createElement("div");
-  actions.className = "todoActions";
-
-  const deleteBtn = document.createElement("button");
-  deleteBtn.type = "button";
-  deleteBtn.className = "btn small ghost";
-  deleteBtn.textContent = "Delete";
-  deleteBtn.addEventListener("click", () => {
-    todos = todos.filter(item => item.id !== todo.id);
-    saveTodos();
-    renderTodos();
-  });
-
-  actions.appendChild(deleteBtn);
-
-  row.appendChild(dragHandle);
-  row.appendChild(input);
-  row.appendChild(actions);
-
-  row.addEventListener("dragstart", (event) => {
-    row.classList.add("dragging");
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", todo.id);
-  });
-  row.addEventListener("dragend", () => {
-    row.classList.remove("dragging");
-  });
-  row.addEventListener("dragover", (event) => {
-    event.preventDefault();
-    row.classList.add("over");
-    event.dataTransfer.dropEffect = "move";
-  });
-  row.addEventListener("dragleave", () => {
-    row.classList.remove("over");
-  });
-  row.addEventListener("drop", (event) => {
-    event.preventDefault();
-    row.classList.remove("over");
-    const draggedId = event.dataTransfer.getData("text/plain");
-    if(!draggedId || draggedId === todo.id) return;
-    const fromIndex = todos.findIndex(item => item.id === draggedId);
-    const toIndex = todos.findIndex(item => item.id === todo.id);
-    if(fromIndex === -1 || toIndex === -1) return;
-    const [moved] = todos.splice(fromIndex, 1);
-    todos.splice(toIndex, 0, moved);
-    saveTodos();
-    renderTodos();
-  });
-
-  return row;
+  return wrap;
 }
 
-function renderTodos(){
-  if(!todoList || !todoEmpty) return;
-  todoList.innerHTML = "";
-  if(!todos.length){
-    todoEmpty.style.display = "block";
-    updateTaskChip();
+function renderTasks(){
+  const list = [...state.tasks].sort((a, b) => (a.completed - b.completed) || (b.updated_at - a.updated_at));
+  const filtered = state.hideCompleted ? list.filter((task) => !task.completed) : list;
+  el.tasksList.replaceChildren();
+  if(!filtered.length){
+    el.tasksList.appendChild(emptyState("No tasks yet. Add one above."));
     return;
   }
-  todoEmpty.style.display = "none";
-  todos.forEach(todo => {
-    todoList.appendChild(createTodoElement(todo));
-  });
-  updateTaskChip();
-}
-
-function savePlannerList(key, list){
-  localStorage.setItem(key, JSON.stringify(list));
-}
-
-function loadPlannerList(key){
-  try{
-    const stored = JSON.parse(localStorage.getItem(key) || "[]");
-    return Array.isArray(stored) ? stored : [];
-  }catch{
-    return [];
-  }
-}
-
-function hydratePlannerListFromCloud(key, cloudItems){
-  const stored = loadPlannerList(key);
-  if(stored.length) return stored;
-  if(!Array.isArray(cloudItems) || !cloudItems.length) return [];
-  const hydrated = cloudItems.map(item => ({
-    id: item.id || crypto.randomUUID(),
-    text: item.text || ""
-  }));
-  savePlannerList(key, hydrated);
-  return hydrated;
-}
-
-function createPlannerItemElement(item, list, { save, render }){
-  const row = document.createElement("div");
-  row.className = "plannerItem";
-  row.draggable = true;
-  row.dataset.id = item.id;
-
-  const dragHandle = document.createElement("div");
-  dragHandle.className = "plannerDrag";
-  dragHandle.textContent = "⋮⋮";
-
-  const input = document.createElement("input");
-  input.type = "text";
-  input.className = "plannerText";
-  input.value = item.text;
-  const commit = () => {
-    const next = input.value.trim();
-    item.text = next;
-    input.value = next;
-    save();
-  };
-  input.addEventListener("change", commit);
-  input.addEventListener("blur", commit);
-
-  const actions = document.createElement("div");
-  actions.className = "plannerActions";
-
-  const deleteBtn = document.createElement("button");
-  deleteBtn.type = "button";
-  deleteBtn.className = "btn small ghost";
-  deleteBtn.textContent = "Delete";
-  deleteBtn.addEventListener("click", () => {
-    const index = list.findIndex(entry => entry.id === item.id);
-    if(index !== -1){
-      list.splice(index, 1);
-    }
-    save();
-    render();
-  });
-
-  actions.appendChild(deleteBtn);
-
-  row.appendChild(dragHandle);
-  row.appendChild(input);
-  row.appendChild(actions);
-
-  row.addEventListener("dragstart", (event) => {
-    row.classList.add("dragging");
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", item.id);
-  });
-  row.addEventListener("dragend", () => {
-    row.classList.remove("dragging");
-  });
-  row.addEventListener("dragover", (event) => {
-    event.preventDefault();
-    row.classList.add("over");
-    event.dataTransfer.dropEffect = "move";
-  });
-  row.addEventListener("dragleave", () => {
-    row.classList.remove("over");
-  });
-  row.addEventListener("drop", (event) => {
-    event.preventDefault();
-    row.classList.remove("over");
-    const draggedId = event.dataTransfer.getData("text/plain");
-    if(!draggedId || draggedId === item.id) return;
-    const fromIndex = list.findIndex(entry => entry.id === draggedId);
-    const toIndex = list.findIndex(entry => entry.id === item.id);
-    if(fromIndex === -1 || toIndex === -1) return;
-    const [moved] = list.splice(fromIndex, 1);
-    list.splice(toIndex, 0, moved);
-    save();
-    render();
-  });
-
-  return row;
-}
-
-function renderPlannerList(list, listEl, emptyEl, { save, render }){
-  if(!listEl || !emptyEl) return;
-  listEl.innerHTML = "";
-  if(!list.length){
-    emptyEl.style.display = "block";
-    return;
-  }
-  emptyEl.style.display = "none";
-  list.forEach(item => {
-    listEl.appendChild(createPlannerItemElement(item, list, { save, render }));
-  });
-}
-
-function saveDinnerIdeas(){
-  savePlannerList(DINNER_IDEAS_KEY, dinnerIdeas);
-}
-
-function saveGroceryItems(){
-  savePlannerList(GROCERY_LIST_KEY, groceryItems);
-}
-
-function renderDinnerIdeas(){
-  renderPlannerList(dinnerIdeas, dinnerList, dinnerEmpty, {
-    save: saveDinnerIdeas,
-    render: renderDinnerIdeas
-  });
-}
-
-function renderGroceryItems(){
-  renderPlannerList(groceryItems, groceryList, groceryEmpty, {
-    save: saveGroceryItems,
-    render: renderGroceryItems
-  });
-}
-
-function setCalendarStatus(message){
-  if(calendarStatus) calendarStatus.textContent = message;
-}
-
-function getCalendarFeedUrl(){
-  const url = hubData?.calendar?.url || CALENDAR_FEED_URL;
-  return url ? url.trim() : "";
-}
-
-function unfoldIcs(text){
-  return text.replace(/\r\n/g, "\n").replace(/\n[ \t]/g, "");
-}
-
-function parseIcsDate(value, isAllDay){
-  if(!value) return null;
-  if(isAllDay && /^\d{8}$/.test(value)){
-    const year = Number(value.slice(0, 4));
-    const month = Number(value.slice(4, 6)) - 1;
-    const day = Number(value.slice(6, 8));
-    return new Date(year, month, day);
-  }
-  const match = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?Z?$/);
-  if(match){
-    const [, year, month, day, hour, minute, second] = match;
-    const dateArgs = [
-      Number(year),
-      Number(month) - 1,
-      Number(day),
-      Number(hour),
-      Number(minute),
-      Number(second || 0)
-    ];
-    if(value.endsWith("Z")){
-      return new Date(Date.UTC(...dateArgs));
-    }
-    return new Date(...dateArgs);
-  }
-  return new Date(value);
-}
-
-function parseIcsEvents(icsText){
-  const events = [];
-  const lines = unfoldIcs(icsText).split("\n");
-  let current = null;
-  for(const line of lines){
-    if(line.startsWith("BEGIN:VEVENT")){
-      current = {};
-      continue;
-    }
-    if(line.startsWith("END:VEVENT")){
-      if(current){
-        events.push(current);
-      }
-      current = null;
-      continue;
-    }
-    if(!current) continue;
-    const [rawKey, ...rest] = line.split(":");
-    if(!rawKey || rest.length === 0) continue;
-    const value = rest.join(":").trim();
-    const keyParts = rawKey.split(";");
-    const key = keyParts[0].toUpperCase();
-    const params = keyParts.slice(1);
-    if(key === "SUMMARY"){
-      current.summary = value;
-    }else if(key === "LOCATION"){
-      current.location = value;
-    }else if(key === "DTSTART"){
-      const isAllDay = params.some(param => param.toUpperCase().includes("VALUE=DATE"));
-      current.start = parseIcsDate(value, isAllDay);
-      current.allDay = isAllDay;
-    }else if(key === "DTEND"){
-      const isAllDay = params.some(param => param.toUpperCase().includes("VALUE=DATE"));
-      current.end = parseIcsDate(value, isAllDay);
-    }
-  }
-  return events;
-}
-
-function formatCalendarEvent(event){
-  const dateFormatter = new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric"
-  });
-  const timeFormatter = new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit"
-  });
-  if(event.allDay){
-    return dateFormatter.format(event.start);
-  }
-  const startTime = timeFormatter.format(event.start);
-  const endTime = event.end ? timeFormatter.format(event.end) : null;
-  return `${dateFormatter.format(event.start)} · ${startTime}${endTime ? ` - ${endTime}` : ""}`;
-}
-
-function renderCalendar(events){
-  if(!calendarList) return;
-  calendarList.innerHTML = "";
-  if(!events.length){
-    setCalendarStatus("No upcoming events.");
-    return;
-  }
-  events.forEach(event => {
+  filtered.forEach((task) => {
     const item = document.createElement("div");
-    item.className = "calendarItem";
-    const when = document.createElement("div");
-    when.className = "calendarWhen";
-    when.textContent = formatCalendarEvent(event);
-    const summary = document.createElement("div");
-    summary.className = "calendarSummary";
-    summary.textContent = event.summary || "Untitled event";
-    item.appendChild(when);
-    item.appendChild(summary);
-    calendarList.appendChild(item);
-  });
-  setCalendarStatus("");
-}
+    item.className = `item ${task.completed ? "completed" : ""}`;
+    const top = document.createElement("div");
+    top.className = "itemTop";
 
-function selectUpcomingEvents(events, limit = 6){
-  const now = new Date();
-  return events
-    .filter(event => {
-      const end = getEventEnd(event);
-      return end && end >= now;
-    })
-    .sort((a, b) => a.start - b.start)
-    .slice(0, limit);
-}
+    const title = document.createElement("div");
+    title.innerHTML = `<strong class="titleText"></strong> ${task.assignee ? `<span class="pill">${task.assignee}</span>` : ""}`;
+    title.querySelector("strong").textContent = task.title;
 
-function buildCalendarUrlVariants(feedUrl){
-  const normalized = feedUrl.replace(/^webcal:\/\//i, "https://");
-  const variants = [normalized];
-  const isWebcal = feedUrl.toLowerCase().startsWith("webcal://");
-  if(normalized !== feedUrl && !isWebcal){
-    variants.push(feedUrl);
-  }
-  const variantBase = isWebcal ? normalized : feedUrl;
-  if(!variantBase.endsWith(".ics")){
-    variants.push(`${variantBase}.ics`);
-  }
-  if(!normalized.endsWith(".ics") && normalized !== variantBase){
-    variants.push(`${normalized}.ics`);
-  }
-  if(!variantBase.includes("?")){
-    variants.push(`${variantBase}?format=ics`);
-  }
-  if(!normalized.includes("?") && normalized !== variantBase){
-    variants.push(`${normalized}?format=ics`);
-  }
-  return Array.from(new Set(variants));
-}
+    top.appendChild(title);
+    top.appendChild(actionButtons([
+      { label: task.completed ? "Undo" : "Done", onClick: () => updateTask(task.id, { completed: task.completed ? 0 : 1 }) },
+      { label: "Edit", onClick: () => editTask(task) },
+      { label: "Delete", onClick: () => removeItem("task", task.id) }
+    ]));
 
-function isValidIcs(text){
-  return typeof text === "string" && text.includes("BEGIN:VCALENDAR");
-}
-
-function readCalendarCache(){
-  try{
-    const cached = JSON.parse(localStorage.getItem(CALENDAR_CACHE_KEY) || "null");
-    if(!cached || !cached.text) return null;
-    if(Date.now() - (cached.updatedAt || 0) > CALENDAR_CACHE_TTL_MS) return null;
-    return cached;
-  }catch{
-    return null;
-  }
-}
-
-function writeCalendarCache(text){
-  try{
-    localStorage.setItem(
-      CALENDAR_CACHE_KEY,
-      JSON.stringify({ text, updatedAt: Date.now() })
-    );
-  }catch{
-    // ignore storage errors
-  }
-}
-
-async function fetchWithTimeout(url, options = {}, timeoutMs = 8000){
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try{
-    return await fetch(url, { ...options, signal: controller.signal });
-  }finally{
-    clearTimeout(timeout);
-  }
-}
-
-async function fetchCalendarText(feedVariants){
-  const candidates = [];
-  feedVariants.forEach(variant => {
-    CALENDAR_FETCH_STRATEGIES.forEach(strategy => {
-      candidates.push({
-        label: strategy.label,
-        url: strategy.build(variant)
-      });
-    });
-  });
-
-  const errors = [];
-  const attempt = async ({ label, url }) => {
-    const response = await fetchWithTimeout(
-      url,
-      {
-        cache: "no-store",
-        headers: { Accept: "text/calendar,*/*" }
-      },
-      7000
-    );
-    if(!response.ok) throw new Error(`${label} fetch failed (${response.status})`);
-    const text = await response.text();
-    if(!isValidIcs(text)){
-      throw new Error(`${label} returned non-ICS data`);
-    }
-    return { text, label };
-  };
-
-  if(typeof Promise.any === "function"){
-    try{
-      return await Promise.any(candidates.map(attempt));
-    }catch{
-      // fall through to sequential attempts for better error info
-    }
-  }
-
-  for(const candidate of candidates){
-    try{
-      return await attempt(candidate);
-    }catch(err){
-      errors.push(err.message || `${candidate.label} fetch failed`);
-    }
-  }
-
-  throw new Error(`Calendar fetch failed. ${errors.join(" | ")}`);
-}
-
-async function loadCalendarEvents(){
-  if(!calendarList) return;
-  try{
-    const feedUrl = getCalendarFeedUrl();
-    if(!feedUrl){
-      setCalendarStatus("No calendar feed configured.");
-      return;
-    }
-    const cached = readCalendarCache();
-    if(cached?.text){
-      const cachedEvents = parseIcsEvents(cached.text)
-        .filter(event => event.start instanceof Date && !Number.isNaN(event.start))
-        .sort((a, b) => a.start - b.start);
-      calendarEvents = cachedEvents;
-      const upcomingCached = selectUpcomingEvents(cachedEvents);
-      renderCalendar(upcomingCached);
-      updateCalendarChips(cachedEvents);
-      setCalendarStatus("Showing cached events. Refreshing…");
-    }else{
-      setCalendarStatus("Loading calendar…");
-    }
-
-    const feedVariants = buildCalendarUrlVariants(feedUrl);
-    const { text: icsText, label } = await fetchCalendarText(feedVariants);
-    if(label && label !== "direct"){
-      console.info(`Calendar loaded via ${label} proxy.`);
-    }
-    writeCalendarCache(icsText);
-    const events = parseIcsEvents(icsText)
-      .filter(event => event.start instanceof Date && !Number.isNaN(event.start))
-      .sort((a, b) => a.start - b.start);
-    calendarEvents = events;
-    const upcoming = selectUpcomingEvents(events);
-    renderCalendar(upcoming);
-    updateCalendarChips(events);
-  }catch(err){
-    console.error(err);
-    const cached = readCalendarCache();
-    if(cached?.text){
-      setCalendarStatus("Using cached events. Could not refresh calendar.");
-    }else{
-      setCalendarStatus("Could not load calendar. Check the feed URL or CORS settings.");
-    }
-  }
-}
-
-function renderMeta(data){
-  const updated = data?.meta?.updatedAt || "";
-  const device = data?.meta?.source || "";
-  footerMeta.textContent = `data: ${updated || "—"} ${device ? `· ${device}` : ""}`;
-}
-
-function getRepoInfo(){
-  const { hostname, pathname } = window.location;
-  if(!hostname.endsWith("github.io")) return null;
-  const owner = hostname.split(".")[0];
-  const pathParts = pathname.split("/").filter(Boolean);
-  const repo = pathParts[0];
-  if(!owner || !repo) return null;
-  return { owner, repo };
-}
-
-function getGithubToken(){
-  const existing = localStorage.getItem(GITHUB_TOKEN_KEY);
-  if(existing) return existing;
-  const entered = window.prompt("Enter your GitHub token to save to cloud:");
-  if(!entered) throw new Error("GitHub token is required.");
-  const token = entered.trim();
-  if(!token) throw new Error("GitHub token is required.");
-  localStorage.setItem(GITHUB_TOKEN_KEY, token);
-  return token;
-}
-
-function buildPayload(){
-  const notes = notesInput?.value ?? "";
-  const calendarValue = hubData?.calendar?.url || CALENDAR_FEED_URL;
-  const payload = {
-    meta: {
-      updatedAt: new Date().toISOString(),
-      source: "web"
-    },
-    today: hubData?.today ?? {},
-    notes,
-    todos,
-    dinnerIdeas,
-    groceries: groceryItems,
-    calendar: calendarValue ? { url: calendarValue } : {}
-  };
-
-  if(Array.isArray(hubData?.links)){
-    payload.links = hubData.links;
-  }
-
-  return payload;
-}
-
-async function saveToCloud(){
-  if(isSaving) return;
-  try{
-    isSaving = true;
-    if(saveBtn) saveBtn.disabled = true;
-    setStatus("Saving…");
-    const token = getGithubToken();
-    const repoInfo = getRepoInfo();
-    if(!repoInfo) throw new Error("Could not infer GitHub repo from this URL.");
-    const payload = buildPayload();
-    const response = await fetch(
-      `https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}/actions/workflows/save-hub-json.yml/dispatches`,
-      {
-        method: "POST",
-        headers: {
-          Accept: "application/vnd.github+json",
-          Authorization: `Bearer ${token}`,
-          "X-GitHub-Api-Version": "2022-11-28"
-        },
-        body: JSON.stringify({
-          ref: "main",
-          inputs: {
-            payload: JSON.stringify(payload)
-          }
-        })
-      }
-    );
-
-    if(!response.ok){
-      let message = `GitHub API error (${response.status})`;
-      try{
-        const data = await response.json();
-        if(data?.message) message = data.message;
-      }catch{
-        // ignore json parse errors
-      }
-      throw new Error(message);
-    }
-
-    setStatus("Saved");
-  }catch(err){
-    console.error(err);
-    setStatus(`Error: ${err.message || "Save failed."}`);
-  }finally{
-    isSaving = false;
-    if(saveBtn) saveBtn.disabled = false;
-  }
-}
-
-async function refresh(){
-  try{
-    updateStatusDate();
-    setStatus("Loading cloud data…");
-    const data = await loadHubJSON();
-    hubData = data;
-
-    renderToday(data);
-    renderMeta(data);
-    hydrateNotesFromCloud(data);
-    hydrateTodosFromCloud(data);
-    hydrateDinnerIdeasFromCloud(data);
-    hydrateGroceryItemsFromCloud(data);
-    renderTodos();
-    renderDinnerIdeas();
-    renderGroceryItems();
-
-    setStatus("Loaded from ./data/hub.json");
-  }catch(err){
-    console.error(err);
-    setStatus("Could not load hub.json (check GitHub Pages + path).");
-    todayBlock.innerHTML = `<div class="muted">Error loading data.</div>`;
-    footerMeta.textContent = "data: —";
-  }finally{
-    loadCalendarEvents();
-  }
-}
-
-refreshBtn?.addEventListener("click", refresh);
-saveBtn?.addEventListener("click", saveToCloud);
-weatherForm?.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const zip = weatherZip?.value.trim();
-  if(!zip) return;
-  localStorage.setItem(WEATHER_ZIP_KEY, zip);
-  fetchWeatherForZip(zip);
-});
-
-notesInput?.addEventListener("input", saveNotes);
-todoForm?.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const value = todoInput?.value.trim();
-  if(!value) return;
-  todos.push({ id: crypto.randomUUID(), text: value });
-  todoInput.value = "";
-  saveTodos();
-  renderTodos();
-});
-
-dinnerForm?.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const value = dinnerInput?.value.trim();
-  if(!value) return;
-  dinnerIdeas.push({ id: crypto.randomUUID(), text: value });
-  dinnerInput.value = "";
-  saveDinnerIdeas();
-  renderDinnerIdeas();
-});
-
-groceryForm?.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const value = groceryInput?.value.trim();
-  if(!value) return;
-  groceryItems.push({ id: crypto.randomUUID(), text: value });
-  groceryInput.value = "";
-  saveGroceryItems();
-  renderGroceryItems();
-});
-
-if("serviceWorker" in navigator){
-  window.addEventListener("load", ()=>{
-    navigator.serviceWorker.register("./service-worker.js").catch(()=>{});
+    item.append(top, metaRow(task.updated_at, task.created_at));
+    el.tasksList.appendChild(item);
   });
 }
 
-loadNotes();
-loadTodos();
-renderTodos();
-loadPlannerLists();
-renderDinnerIdeas();
-renderGroceryItems();
-updateStatusDate();
-updateCalendarChips(calendarEvents);
-refresh();
+function renderNotes(){
+  const list = [...state.notes].sort((a, b) => (b.pinned - a.pinned) || (b.updated_at - a.updated_at));
+  el.notesList.replaceChildren();
+  if(!list.length) return el.notesList.appendChild(emptyState("No notes yet. Add one above."));
+  list.forEach((note) => {
+    const item = document.createElement("div");
+    item.className = "item";
+    const top = document.createElement("div");
+    top.className = "itemTop";
 
-const storedZip = localStorage.getItem(WEATHER_ZIP_KEY);
-if(weatherZip && storedZip){
-  weatherZip.value = storedZip;
-  fetchWeatherForZip(storedZip);
+    const body = document.createElement("div");
+    body.textContent = note.content;
+    top.appendChild(body);
+    top.appendChild(actionButtons([
+      { label: note.pinned ? "Unpin" : "Pin", onClick: () => updateNote(note.id, { pinned: note.pinned ? 0 : 1 }) },
+      { label: "Edit", onClick: () => editNote(note) },
+      { label: "Delete", onClick: () => removeItem("note", note.id) }
+    ]));
+
+    item.append(top, metaRow(note.updated_at, note.created_at));
+    el.notesList.appendChild(item);
+  });
 }
+
+function renderMeals(){
+  const orderedDays = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+  const list = [...state.meals].sort((a,b)=> orderedDays.indexOf(a.day)-orderedDays.indexOf(b.day) || (b.updated_at-a.updated_at));
+  el.mealsList.replaceChildren();
+  if(!list.length) return el.mealsList.appendChild(emptyState("No meals planned yet."));
+  list.forEach((meal) => {
+    const item = document.createElement("div");
+    item.className = "item";
+    const top = document.createElement("div");
+    top.className = "itemTop";
+    const content = document.createElement("div");
+    content.innerHTML = `<strong>${meal.day}:</strong> ${meal.meal}${meal.notes ? ` <span class="muted">(${meal.notes})</span>` : ""}`;
+    top.append(content, actionButtons([
+      { label: "Edit", onClick: () => editMeal(meal) },
+      { label: "Delete", onClick: () => removeItem("meal", meal.id) }
+    ]));
+    item.append(top, metaRow(meal.updated_at));
+    el.mealsList.appendChild(item);
+  });
+}
+
+function renderLinks(){
+  const list = [...state.links].sort((a,b)=> b.created_at-a.created_at);
+  el.linksList.replaceChildren();
+  if(!list.length) return el.linksList.appendChild(emptyState("No quick links yet."));
+  list.forEach((link) => {
+    const card = document.createElement("div");
+    card.className = "linkCard";
+    const main = document.createElement("div");
+    main.className = "linkMain";
+    main.innerHTML = `<span>${link.icon || "🔗"}</span>`;
+    const a = document.createElement("a");
+    a.href = link.url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.textContent = link.title;
+    main.appendChild(a);
+
+    card.append(main, actionButtons([
+      { label: "Edit", onClick: () => editLink(link) },
+      { label: "Delete", onClick: () => removeItem("link", link.id) }
+    ]));
+
+    el.linksList.appendChild(card);
+  });
+}
+
+function metaRow(updatedAt, createdAt){
+  const row = document.createElement("div");
+  row.className = "muted";
+  const updated = updatedAt ? new Date(updatedAt).toLocaleString() : "";
+  const created = createdAt ? new Date(createdAt).toLocaleString() : "";
+  row.textContent = updated ? `Updated ${updated}${created ? ` • Created ${created}` : ""}` : "";
+  return row;
+}
+
+function renderAll(){ renderTasks(); renderNotes(); renderMeals(); renderLinks(); }
+
+async function createTask(payload){ await api("/api/tasks", { method: "POST", body: JSON.stringify(payload) }); await refreshAll(); }
+async function updateTask(id, payload){ await api(`/api/tasks/${id}`, { method: "PUT", body: JSON.stringify(payload) }); await refreshAll(); }
+async function createNote(payload){ await api("/api/notes", { method: "POST", body: JSON.stringify(payload) }); await refreshAll(); }
+async function updateNote(id, payload){ await api(`/api/notes/${id}`, { method: "PUT", body: JSON.stringify(payload) }); await refreshAll(); }
+async function createMeal(payload){ await api("/api/meals", { method: "POST", body: JSON.stringify(payload) }); await refreshAll(); }
+async function updateMeal(id, payload){ await api(`/api/meals/${id}`, { method: "PUT", body: JSON.stringify(payload) }); await refreshAll(); }
+async function createLink(payload){ await api("/api/links", { method: "POST", body: JSON.stringify(payload) }); await refreshAll(); }
+async function updateLink(id, payload){ await api(`/api/links/${id}`, { method: "PUT", body: JSON.stringify(payload) }); await refreshAll(); }
+
+async function removeItem(type, id){
+  if(!confirm(`Delete this ${type}?`)) return;
+  await api(`/api/${type}s/${id}`, { method: "DELETE" });
+  await refreshAll();
+}
+
+function editTask(task){
+  const title = prompt("Task title", task.title);
+  if(title === null) return;
+  const assignee = prompt("Assignee (optional)", task.assignee || "");
+  if(assignee === null) return;
+  updateTask(task.id, { title: title.trim(), assignee: assignee.trim() || null });
+}
+function editNote(note){
+  const content = prompt("Edit note", note.content);
+  if(content === null) return;
+  updateNote(note.id, { content: content.trim() });
+}
+function editMeal(meal){
+  const day = prompt("Day", meal.day); if(day === null) return;
+  const dish = prompt("Meal", meal.meal); if(dish === null) return;
+  const notes = prompt("Notes (optional)", meal.notes || ""); if(notes === null) return;
+  updateMeal(meal.id, { day: day.trim(), meal: dish.trim(), notes: notes.trim() || null });
+}
+function editLink(link){
+  const title = prompt("Title", link.title); if(title === null) return;
+  const url = prompt("URL", link.url); if(url === null) return;
+  const icon = prompt("Emoji/icon (optional)", link.icon || ""); if(icon === null) return;
+  updateLink(link.id, { title: title.trim(), url: url.trim(), icon: icon.trim() || null });
+}
+
+function bindEvents(){
+  el.refreshBtn.addEventListener("click", refreshAll);
+  el.hideCompleted.addEventListener("change", (e) => { state.hideCompleted = e.target.checked; renderTasks(); });
+
+  el.taskForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const title = el.taskTitle.value.trim();
+    if(!title) return;
+    await createTask({ title, assignee: el.taskAssignee.value.trim() || null });
+    el.taskForm.reset();
+  });
+
+  el.noteForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const content = el.noteContent.value.trim();
+    if(!content) return;
+    await createNote({ content });
+    el.noteForm.reset();
+  });
+
+  el.mealForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const day = el.mealDay.value.trim();
+    const meal = el.mealName.value.trim();
+    if(!day || !meal) return;
+    await createMeal({ day, meal, notes: el.mealNotes.value.trim() || null });
+    el.mealForm.reset();
+  });
+
+  el.linkForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const title = el.linkTitle.value.trim();
+    const url = el.linkUrl.value.trim();
+    if(!title || !url) return;
+    await createLink({ title, url, icon: el.linkIcon.value.trim() || null });
+    el.linkForm.reset();
+  });
+}
+
+setTodayHeader();
+bindEvents();
+refreshAll();
