@@ -47,6 +47,9 @@ async function api(path, options = {}){
   }
 
   const data = await response.json().catch(() => ({}));
+  if (method === "GET" && path === "/api/tasks") {
+    console.log("[debug] GET /api/tasks parsed JSON", data);
+  }
   if (shouldLog) {
     console.log(`[save:${logLabel}] parsed response JSON`, data);
   }
@@ -70,10 +73,10 @@ async function refreshAll(){
     const [tasks, notes, meals, links] = await Promise.all([
       api("/api/tasks"), api("/api/notes"), api("/api/meals"), api("/api/links")
     ]);
-    state.tasks = tasks.items || [];
-    state.notes = notes.items || [];
-    state.meals = meals.items || [];
-    state.links = links.items || [];
+    state.tasks = Array.isArray(tasks) ? tasks : [];
+    state.notes = Array.isArray(notes) ? notes : [];
+    state.meals = Array.isArray(meals) ? meals : [];
+    state.links = Array.isArray(links) ? links : [];
     state.lastSynced = new Date();
     renderAll();
     setSyncStatus(`Last synced ${state.lastSynced.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`);
@@ -104,8 +107,10 @@ function actionButtons(actions){
 }
 
 function renderTasks(){
+  console.log("[debug] state.tasks before renderTasks()", state.tasks);
   const list = [...state.tasks].sort((a, b) => (a.completed - b.completed) || (b.updated_at - a.updated_at));
   const filtered = state.hideCompleted ? list.filter((task) => !task.completed) : list;
+  console.log("[debug] renderTasks item count", filtered.length);
   el.tasksList.replaceChildren();
   if(!filtered.length){
     el.tasksList.appendChild(emptyState("No tasks yet. Add one above."));
